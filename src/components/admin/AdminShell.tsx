@@ -79,7 +79,7 @@ export function AdminShell({ active, children }: AdminShellProps) {
 
       <Layout>
         <Header className="admin-header">
-          <Space size={12} wrap>
+          <div className="admin-actions">
             <Button className="header-icon-btn" icon={<MenuOutlined />} />
             <a href="https://www.muazbd.com/" target="_blank" rel="noreferrer">
               <Button className="top-action ghost-blue" icon={<GlobalOutlined />}>View Website</Button>
@@ -97,7 +97,7 @@ export function AdminShell({ active, children }: AdminShellProps) {
             <Button className="top-action primary-action" icon={<SendOutlined />} onClick={() => setMessageOpen(true)}>
               Send Message
             </Button>
-          </Space>
+          </div>
 
           <Space size={10} className="admin-user">
             <Avatar size={34} src="https://i.pravatar.cc/64?img=12" />

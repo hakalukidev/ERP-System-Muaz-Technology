@@ -17,6 +17,10 @@ body {
   color: var(--text);
 }
 
+.ant-layout {
+  min-width: 0;
+}
+
 .admin-shell {
   min-height: 100vh;
   background: #fafafa;
@@ -114,21 +118,45 @@ body {
 
 .admin-header {
   height: 72px !important;
+  min-height: 72px !important;
   background: #fff !important;
   border-bottom: 1px solid #eee;
   padding: 0 22px !important;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
+  gap: 16px;
   line-height: normal !important;
   position: sticky;
   top: 0;
   z-index: 20;
+  overflow: hidden;
+}
+
+.admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.admin-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-actions a {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 .header-icon-btn,
 .top-action {
   height: 34px;
+  flex: 0 0 auto;
   border-radius: 6px;
   font-weight: 800;
   font-size: 12px;
@@ -150,6 +178,7 @@ body {
 .admin-user {
   font-weight: 800;
   flex-shrink: 0;
+  justify-self: end;
 }
 
 .admin-content {
@@ -546,8 +575,9 @@ body {
 
   .admin-header {
     height: auto !important;
+    min-height: 72px !important;
     padding: 14px !important;
-    align-items: flex-start;
+    align-items: center;
     gap: 14px;
   }
 
