@@ -510,6 +510,18 @@ body {
   max-width: 220px;
 }
 
+.management-head {
+  align-items: center;
+}
+
+.management-kpis {
+  margin-bottom: 8px;
+}
+
+.management-kpis .metric-tile {
+  min-height: 96px;
+}
+
 .stock-table .ant-table-thead > tr > th {
   background: #f8f8f8;
   font-weight: 900;

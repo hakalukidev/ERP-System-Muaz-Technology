@@ -27,14 +27,14 @@ const { Header, Sider, Content } = Layout;
 
 const menuItems = [
   { label: 'Dashboard', icon: <DashboardOutlined />, href: '/admin/dashboard' },
-  { label: 'Admins', icon: <TeamOutlined />, href: '#' },
-  { label: 'Analytics', icon: <BarChartOutlined />, href: '#' },
-  { label: 'Accounts', icon: <AccountBookOutlined />, href: '#' },
-  { label: 'Store', icon: <ShopOutlined />, href: '#' },
-  { label: 'Orders', icon: <ShoppingCartOutlined />, href: '#' },
-  { label: 'Wholesale', icon: <ProductOutlined />, href: '#' },
-  { label: 'Pages', icon: <FileTextOutlined />, href: '#' },
-  { label: 'Settings', icon: <SettingOutlined />, href: '#' },
+  { label: 'Admins', icon: <TeamOutlined />, href: '/admin/admins' },
+  { label: 'Analytics', icon: <BarChartOutlined />, href: '/admin/analytics' },
+  { label: 'Accounts', icon: <AccountBookOutlined />, href: '/admin/accounts' },
+  { label: 'Store', icon: <ShopOutlined />, href: '/admin/store' },
+  { label: 'Orders', icon: <ShoppingCartOutlined />, href: '/admin/orders' },
+  { label: 'Wholesale', icon: <ProductOutlined />, href: '/admin/wholesale' },
+  { label: 'Pages', icon: <FileTextOutlined />, href: '/admin/pages' },
+  { label: 'Settings', icon: <SettingOutlined />, href: '/admin/settings' },
   { label: 'Reports', icon: <CarryOutOutlined />, href: '/admin/user/report' },
 ];
 
@@ -84,7 +84,9 @@ export function AdminShell({ active, children }: AdminShellProps) {
             <a href="https://www.muazbd.com/" target="_blank" rel="noreferrer">
               <Button className="top-action ghost-blue" icon={<GlobalOutlined />}>View Website</Button>
             </a>
-            <Button className="top-action" icon={<ShoppingCartOutlined />}>User Order</Button>
+            <Link href="/admin/user-order">
+              <Button className="top-action" icon={<ShoppingCartOutlined />}>User Order</Button>
+            </Link>
             <Link href="/admin/stock/overview">
               <Button className="top-action ghost-blue" icon={<ProductOutlined />}>Inventory</Button>
             </Link>
