@@ -62,7 +62,7 @@ export function ReportScreen() {
           <Text>View user-wise order summary, status count, success percentage and failed percentage.</Text>
           <div className="breadcrumb">Dashboard / User Report</div>
         </div>
-        <Button type="primary" danger icon={<PrinterOutlined />} size="large">Print Report</Button>
+        <Button type="primary" icon={<PrinterOutlined />} size="large">Print Report</Button>
       </section>
 
       <Card className="report-card" title="REPORT FILTERS">

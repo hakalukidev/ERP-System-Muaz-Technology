@@ -80,7 +80,7 @@ export function StockOverviewScreen() {
           <Title level={3}>Products Stock Overview</Title>
           <Text>Category-wise stock summary and product stock report.</Text>
         </div>
-        <Button type="primary" danger icon={<PrinterOutlined />} size="large">Print Report</Button>
+        <Button type="primary" icon={<PrinterOutlined />} size="large">Print Report</Button>
       </section>
 
       <Row gutter={[16, 16]} className="stock-summary">

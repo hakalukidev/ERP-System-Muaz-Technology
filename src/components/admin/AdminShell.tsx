@@ -2,7 +2,6 @@
 
 import {
   AccountBookOutlined,
-  AppstoreOutlined,
   BarChartOutlined,
   BellOutlined,
   CarryOutOutlined,
@@ -51,11 +50,7 @@ export function AdminShell({ active, children }: AdminShellProps) {
     <Layout className="admin-shell">
       <Sider width={176} className="admin-sidebar">
         <div className="admin-logo">
-          <AppstoreOutlined />
-          <div>
-            <strong>DANPITE.TECH</strong>
-            <span>Your digital growth</span>
-          </div>
+          <img src="/muaz-logo.svg" alt="Muaz Technology" />
         </div>
 
         <nav className="admin-menu">
@@ -86,16 +81,18 @@ export function AdminShell({ active, children }: AdminShellProps) {
         <Header className="admin-header">
           <Space size={12} wrap>
             <Button className="header-icon-btn" icon={<MenuOutlined />} />
-            <Button className="top-action ghost-red" icon={<GlobalOutlined />}>View Website</Button>
+            <a href="https://www.muazbd.com/" target="_blank" rel="noreferrer">
+              <Button className="top-action ghost-blue" icon={<GlobalOutlined />}>View Website</Button>
+            </a>
             <Button className="top-action" icon={<ShoppingCartOutlined />}>User Order</Button>
             <Link href="/admin/stock/overview">
-              <Button className="top-action ghost-red" icon={<ProductOutlined />}>Inventory</Button>
+              <Button className="top-action ghost-blue" icon={<ProductOutlined />}>Inventory</Button>
             </Link>
-            <Button className="top-action red" icon={<BellOutlined />}>Complain</Button>
+            <Button className="top-action primary-action" icon={<BellOutlined />}>Complain</Button>
             <Link href="/admin/tasks">
               <Button className="top-action" icon={<OrderedListOutlined />}>My Task</Button>
             </Link>
-            <Button className="top-action red" icon={<SendOutlined />} onClick={() => setMessageOpen(true)}>
+            <Button className="top-action primary-action" icon={<SendOutlined />} onClick={() => setMessageOpen(true)}>
               Send Message
             </Button>
           </Space>
@@ -130,7 +127,7 @@ export function AdminShell({ active, children }: AdminShellProps) {
           </Form.Item>
           <div className="modal-actions">
             <Button onClick={() => setMessageOpen(false)}>Cancel</Button>
-            <Button type="primary" danger icon={<SendOutlined />}>Send</Button>
+            <Button type="primary" icon={<SendOutlined />}>Send</Button>
           </div>
         </Form>
       </Modal>

@@ -18,7 +18,7 @@ export function TasksScreen() {
 
         <div className="tasks-title-row">
           <Title level={2}>My Daily Task List</Title>
-          <Button type="primary" danger icon={<PlusOutlined />}>Create Task</Button>
+          <Button type="primary" icon={<PlusOutlined />}>Create Task</Button>
         </div>
 
         <Space wrap className="task-filters">
@@ -45,10 +45,10 @@ export function TasksScreen() {
           ]}
         />
 
-        <Text type="danger">Showing 0 to 0 of 0 entries</Text>
+        <Text className="theme-text">Showing 0 to 0 of 0 entries</Text>
       </section>
 
-      <footer className="admin-footer">© 2026 <strong>Danpite Tech</strong>, All Rights Reserved.</footer>
+      <footer className="admin-footer">© 2026 <strong>Muaz Technology</strong>, All Rights Reserved.</footer>
     </AdminShell>
   );
 }

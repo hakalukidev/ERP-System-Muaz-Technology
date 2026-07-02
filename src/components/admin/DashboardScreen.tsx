@@ -29,7 +29,7 @@ import { AdminShell } from './AdminShell';
 const { Title, Text } = Typography;
 
 const infoCards = [
-  { label: 'Account Balance', value: '500000', icon: <WalletOutlined />, danger: true },
+  { label: 'Account Balance', value: '500000', icon: <WalletOutlined />, emphasis: true },
   { label: 'Total Payment', value: '500000 TK', icon: <DollarCircleOutlined /> },
   { label: 'Total Cost', value: '0 TK', icon: <FundOutlined /> },
   { label: 'Wholesale Payment', value: '500000 TK', icon: <ShopOutlined /> },
@@ -66,7 +66,7 @@ export function DashboardScreen() {
   return (
     <AdminShell active="Dashboard">
       <section className="panel hero-panel">
-        <Title level={4}>Danpite Tech</Title>
+        <Title level={4}>Muaz Technology</Title>
         <div className="hero-row">
           <Title level={4}>INFORMATION</Title>
           <Space wrap>
@@ -88,7 +88,7 @@ export function DashboardScreen() {
                 <div className="metric-icon">{item.icon}</div>
                 <div>
                   <Text className="metric-label">{item.label}</Text>
-                  <strong className={item.danger ? 'danger-text' : ''}>{item.value}</strong>
+                  <strong className={item.emphasis ? 'emphasis-text' : ''}>{item.value}</strong>
                 </div>
               </Card>
             </Col>
