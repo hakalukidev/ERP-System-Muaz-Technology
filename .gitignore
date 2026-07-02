@@ -3,7 +3,6 @@
 /.pnp
 .pnp.js
 .yarn/install-state.gz
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
@@ -57,6 +56,8 @@ tsconfig.tsbuildinfo
 # IDE
 .vscode/
 .idea/
+.agents/
+.codex/
 *.iml
 .project
 .classpath
