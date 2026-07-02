@@ -1,7 +1,7 @@
-<svg width="190" height="58" viewBox="0 0 190 58" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="190" height="58" fill="white"/>
-  <path d="M13 36.5L39.5 11L53 24L24.5 42.5L13 36.5Z" fill="#b75a4e"/>
-  <path d="M43.5 38L68.5 11L95 38H75L68 30.5L60 38H43.5Z" fill="#c46154"/>
-  <text x="105" y="25" fill="#2445d8" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700">MUAZ</text>
-  <text x="107" y="42" fill="#2f4059" font-family="Arial, Helvetica, sans-serif" font-size="10.5" font-weight="700" letter-spacing="1">TECHNOLOGY</text>
+<svg width="220" height="58" viewBox="0 0 220 58" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="220" height="58" fill="white"/>
+  <path d="M12 36L37 12L50 24L23 42L12 36Z" fill="#b75a4e"/>
+  <path d="M42 38L66 12L91 38H72L66 31L58 38H42Z" fill="#c46154"/>
+  <text x="104" y="25" fill="#2445d8" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700">MUAZ</text>
+  <text x="105" y="41" fill="#2f4059" font-family="Arial, Helvetica, sans-serif" font-size="8.5" font-weight="700" letter-spacing="0.8">TECHNOLOGY</text>
 </svg>
