@@ -1,4 +1,6 @@
-import type { Metadata } from 'next'
+﻿import type { Metadata } from 'next'
+import { ThemeProvider } from '@/components/theme-provider'
+import { ERPProvider } from '@/lib/erp/provider'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -12,8 +14,12 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body suppressHydrationWarning>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+          <ERPProvider>{children}</ERPProvider>
+        </ThemeProvider>
+      </body>
     </html>
   )
 }

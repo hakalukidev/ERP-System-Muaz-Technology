@@ -1,6 +1,6 @@
-import { initializeApp } from 'firebase/app'
+﻿import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import { getDatabase } from 'firebase/database'
 import { getStorage } from 'firebase/storage'
 
 const firebaseConfig = {
@@ -10,10 +10,13 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
 }
 
-const app = initializeApp(firebaseConfig)
-export const db = getFirestore(app)
-export const auth = getAuth(app)
-export const storage = getStorage(app)
+const isBrowser = typeof window !== 'undefined'
+const app = isBrowser ? (getApps().length ? getApp() : initializeApp(firebaseConfig)) : null
 
+export const auth = app ? getAuth(app) : null
+export const database = app ? getDatabase(app) : null
+export const storage = app ? getStorage(app) : null

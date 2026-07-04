@@ -1,102 +1,221 @@
-"use client";
+﻿"use client"
 
-import { PrinterOutlined } from '@ant-design/icons';
-import { Button, Card, DatePicker, Select, Space, Table, Tag, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
-import { AdminShell } from './AdminShell';
+import { Printer } from 'lucide-react'
 
-const { Title, Text } = Typography;
-
-type RowData = {
-  key: string;
-  name: string;
-  total: number;
-  pending: number;
-  ready: number;
-  hold: number;
-  packaging: number;
-  shipped: number;
-  cancelled: number;
-  completed: number;
-  failed: number;
-};
-
-const users = ['Rahat', 'Ritu', 'shuvo'];
-const data: RowData[] = users.map((name) => ({
-  key: name,
-  name,
-  total: 0,
-  pending: 0,
-  ready: 0,
-  hold: 0,
-  packaging: 0,
-  shipped: 0,
-  cancelled: 0,
-  completed: 0,
-  failed: 0,
-}));
-
-const columns: ColumnsType<RowData> = [
-  { title: 'USER NAME', dataIndex: 'name', fixed: 'left', width: 130 },
-  { title: 'TOTAL ORDER', dataIndex: 'total', render: (v) => badge(v) },
-  { title: 'PENDING', dataIndex: 'pending', render: (v) => badge(v) },
-  { title: 'READY TO SHIP', dataIndex: 'ready', render: (v) => badge(v) },
-  { title: 'HOLD', dataIndex: 'hold', render: (v) => badge(v) },
-  { title: 'PACKAGING', dataIndex: 'packaging', render: (v) => badge(v) },
-  { title: 'SHIPPED', dataIndex: 'shipped', render: (v) => badge(v, 'green') },
-  { title: 'CANCELLED', dataIndex: 'cancelled', render: (v) => badge(v, 'red') },
-  { title: 'COMPLETED', dataIndex: 'completed', render: (v) => badge(v, 'green') },
-  { title: 'DEL. FAIL', dataIndex: 'failed', render: (v) => badge(v, 'red') },
-];
-
-function badge(value: number, color: 'red' | 'green' | 'gold' = 'gold') {
-  return <Tag className="status-pill" color={color}>{value}</Tag>;
-}
+import { AdminShell } from './AdminShell'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useERP } from '@/lib/erp/provider'
+import { buildUserReport, exportCsv, formatCurrency, notificationToneClass, toArray } from '@/lib/erp/utils'
 
 export function ReportScreen() {
+  const { data, currentUser, currentPermissions, markNotificationRead } = useERP()
+  const report = buildUserReport(data)
+  const permissions = toArray(data?.permissions)
+  const notifications = toArray(data?.notifications).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  const totalRevenue = report.reduce((sum, row) => sum + row.revenue, 0)
+  const totalDue = report.reduce((sum, row) => sum + row.due, 0)
+
+  function handleExport() {
+    exportCsv(
+      'ims-user-report.csv',
+      ['User', 'Role', 'Orders', 'Pending Orders', 'Completed Orders', 'Revenue', 'Due'],
+      report.map((row) => [
+        row.name,
+        row.role,
+        String(row.totalOrders),
+        String(row.pendingOrders),
+        String(row.completedOrders),
+        String(row.revenue),
+        String(row.due),
+      ])
+    )
+  }
+
   return (
     <AdminShell active="Reports">
-      <section className="page-head">
-        <div>
-          <Title level={3}>User Report</Title>
-          <Text>View user-wise order summary, status count, success percentage and failed percentage.</Text>
-          <div className="breadcrumb">Dashboard / User Report</div>
+      <div className="space-y-6">
+        <Card className="border-border/70 shadow-sm">
+          <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Reports</Badge>
+                <Badge variant="outline" className="rounded-full">Team and access matrix</Badge>
+              </div>
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight">Performance and role reporting</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                Review user performance, dynamic permissions, revenue concentration, and live notifications from the SRS core modules.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="rounded-xl" onClick={handleExport}>
+                Export CSV
+              </Button>
+              <Button className="rounded-xl" onClick={() => window.print()}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print report
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>Report pack</CardTitle>
+            <CardDescription>All operational reports should stay exportable in both Excel and PDF form.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[
+              ['Sales report', 'Sales, invoices, and payment history.'],
+              ['Stock report', 'Current stock, low stock, and warehouse view.'],
+              ['Supplier/import cost', 'Purchase orders, LC, and landed cost summaries.'],
+              ['Customer ledger', 'Customer history, dues, and support activity.'],
+              ['Profit and loss', 'Finance summary with base-currency reporting.'],
+              ['Returns and warranty claims', 'Track refund, replacement, and claim resolution.'],
+            ].map(([title, description]) => (
+              <div key={title} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                <p className="font-semibold">{title}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-5">
+              <p className="text-sm text-muted-foreground">Total tracked revenue</p>
+              <p className="mt-2 text-3xl font-semibold">{formatCurrency(totalRevenue, data?.settings.currency)}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-5">
+              <p className="text-sm text-muted-foreground">Total outstanding due</p>
+              <p className="mt-2 text-3xl font-semibold">{formatCurrency(totalDue, data?.settings.currency)}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-border/70 shadow-sm">
+            <CardContent className="p-5">
+              <p className="text-sm text-muted-foreground">Current role permissions</p>
+              <p className="mt-2 text-lg font-semibold">{currentUser ? data?.roles[currentUser.roleId]?.name : 'Loading role'}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{currentPermissions.length} active permissions</p>
+            </CardContent>
+          </Card>
         </div>
-        <Button type="primary" icon={<PrinterOutlined />} size="large">Print Report</Button>
-      </section>
 
-      <Card className="report-card" title="REPORT FILTERS">
-        <Space wrap size={14} className="filter-row">
-          <div>
-            <Text strong>Start Date</Text>
-            <DatePicker placeholder="2026-06-30" />
-          </div>
-          <div>
-            <Text strong>End Date</Text>
-            <DatePicker placeholder="2026-06-30" />
-          </div>
-          <div>
-            <Text strong>Select User</Text>
-            <Select
-              placeholder="Select a User"
-              style={{ width: 300 }}
-              options={users.map((name) => ({ value: name, label: name }))}
-            />
-          </div>
-          <Button className="reset-btn">Reset</Button>
-        </Space>
-      </Card>
+        <Card className="border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>User summary</CardTitle>
+            <CardDescription>Realtime order, due, and revenue output by teammate.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-hidden rounded-2xl border border-border/70">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableHead>User</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Orders</TableHead>
+                      <TableHead>Pending</TableHead>
+                      <TableHead>Completed</TableHead>
+                      <TableHead>Revenue</TableHead>
+                      <TableHead>Due</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {report.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell>{row.role}</TableCell>
+                        <TableCell>{row.totalOrders}</TableCell>
+                        <TableCell>{row.pendingOrders}</TableCell>
+                        <TableCell>{row.completedOrders}</TableCell>
+                        <TableCell>{formatCurrency(row.revenue, data?.settings.currency)}</TableCell>
+                        <TableCell>{formatCurrency(row.due, data?.settings.currency)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-      <Card className="report-card" title="USER SUMMARY">
-        <Table
-          size="small"
-          columns={columns}
-          dataSource={[...data, { ...data[0], key: 'total', name: 'Total' }]}
-          pagination={false}
-          scroll={{ x: 980 }}
-          rowClassName={(record) => record.key === 'total' ? 'summary-row' : ''}
-        />
-      </Card>
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader>
+              <CardTitle>Role and permission matrix</CardTitle>
+              <CardDescription>Permissions are stored in Firebase data instead of being hardcoded in the UI.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-hidden rounded-2xl border border-border/70">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead>Permission</TableHead>
+                        {Object.values(data?.roles ?? {}).map((role) => (
+                          <TableHead key={role.id}>{role.name}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {permissions.map((permission) => (
+                        <TableRow key={permission.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{permission.label}</p>
+                              <p className="text-sm text-muted-foreground">{permission.description}</p>
+                            </div>
+                          </TableCell>
+                          {Object.values(data?.roles ?? {}).map((role) => (
+                            <TableCell key={role.id}>
+                              {role.permissions.includes(permission.id) ? (
+                                <Badge className="rounded-full bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300">Allowed</Badge>
+                              ) : (
+                                <Badge variant="outline" className="rounded-full">No access</Badge>
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/70 shadow-sm">
+            <CardHeader>
+              <CardTitle>Notifications</CardTitle>
+              <CardDescription>Review and clear outstanding operational alerts.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {notifications.map((notification) => (
+                <div key={notification.id} className={`rounded-2xl border p-4 ${notificationToneClass(notification)}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{notification.title}</p>
+                      <p className="mt-2 text-sm leading-6">{notification.body}</p>
+                    </div>
+                    {!notification.read ? (
+                      <Button variant="outline" className="rounded-full" onClick={() => void markNotificationRead(notification.id)}>
+                        Mark read
+                      </Button>
+                    ) : (
+                      <Badge variant="outline">Read</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </AdminShell>
-  );
+  )
 }
