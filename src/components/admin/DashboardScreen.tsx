@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import Link from 'next/link'
 import {
@@ -15,7 +15,6 @@ import {
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import { AdminShell } from './AdminShell'
-import { UserManagementPanel } from './UserManagementPanel'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -42,8 +41,8 @@ const metricMeta = [
 ] as const
 
 export function DashboardScreen() {
-  const { data, loading, error } = useERP()
-  const snapshot = buildDashboardSnapshot(data)
+  const { data, loading, error, currentUser } = useERP()
+  const snapshot = buildDashboardSnapshot(data, currentUser?.roleId)
   const activeWarrantyClaims = toArray(data?.tasks).filter((task) => task.module === 'support' && task.status !== 'done').length
 
   return (
@@ -247,7 +246,7 @@ export function DashboardScreen() {
           </Card>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <div className="grid gap-6 xl:grid-cols-1">
           <Card className="border-border/70 shadow-sm">
             <CardHeader>
               <CardTitle>Low stock items</CardTitle>
@@ -274,36 +273,6 @@ export function DashboardScreen() {
               )}
             </CardContent>
           </Card>
-
-          <Card className="border-border/70 shadow-sm">
-            <CardHeader>
-              <CardTitle>Auto reminders</CardTitle>
-              <CardDescription>System-generated stock and payment follow-ups.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold">Low stock reminders</p>
-                  <Badge variant="outline">{snapshot.lowStock.length}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">Products at or below minimum stock are highlighted for replenishment.</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold">Payment follow-ups</p>
-                  <Badge variant="outline">{snapshot.metrics.pendingPayment}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">Outstanding dues stay visible so the team can follow up quickly.</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-semibold">Warranty claim queue</p>
-                  <Badge variant="outline">{activeWarrantyClaims}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">Support tickets tied to warranty issues stay in one workflow.</p>
-              </div>
-            </CardContent>
-          </Card>
         </div>
 
         <Card className="border-border/70 shadow-sm">
@@ -326,7 +295,6 @@ export function DashboardScreen() {
           </CardContent>
         </Card>
 
-        <UserManagementPanel />
       </div>
     </AdminShell>
   )

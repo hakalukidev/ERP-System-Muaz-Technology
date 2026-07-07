@@ -1,12 +1,24 @@
-﻿"use client"
+"use client"
 
-import { useDeferredValue, useMemo, useState } from 'react'
-import { AlertTriangle, PackagePlus, Search, ShoppingBag, Truck } from 'lucide-react'
+import { useDeferredValue, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import {
+  PencilLine,
+  Search,
+  Trash2,
+} from 'lucide-react'
 
 import { AdminShell } from './AdminShell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -16,105 +28,528 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
 import { useERP } from '@/lib/erp/provider'
 import { formatCurrency, formatDateTime, getProductStatus, toArray } from '@/lib/erp/utils'
 
-const emptyProduct = {
-  name: '',
-  category: '',
-  brand: '',
-  sku: '',
-  warehouseId: '',
-  supplierId: '',
-  purchasePrice: '0',
-  sellingPrice: '0',
-  wholesalePrice: '0',
-  stockQty: '0',
-  minStock: '0',
-  maxStock: '0',
-  description: '',
+const SUPPLIER_NONE = '__none__'
+const currencyOptions = ['BDT', 'USD', 'CNY', 'EUR']
+
+type ProductFormState = {
+  name: string
+  sku: string
+  category: string
+  warehouseId: string
+  supplierId: string
+  purchasePrice: string
+  sellingPrice: string
+  stockQty: string
+  minStock: string
+  maxStock: string
+  imageUrl: string
+  imagePublicId: string
 }
 
-const emptyPurchase = {
-  productId: '',
-  supplierId: '',
-  quantity: '1',
-  unitCost: '0',
-  currency: 'BDT',
+type PurchaseFormState = {
+  productId: string
+  supplierId: string
+  quantity: string
+  unitCost: string
+  currency: string
+}
+
+type WarehouseFormState = {
+  name: string
+  location: string
+}
+
+type InventoryView = 'products' | 'warehouses' | 'low-stock' | 'purchases'
+
+type ProductImageUploadResult = {
+  imageUrl: string
+  imagePublicId: string
+}
+
+function createEmptyProductForm(warehouseId = ''): ProductFormState {
+  return {
+    name: '',
+    sku: '',
+    category: '',
+    warehouseId,
+    supplierId: SUPPLIER_NONE,
+    purchasePrice: '',
+    sellingPrice: '',
+    stockQty: '0',
+    minStock: '0',
+    maxStock: '0',
+    imageUrl: '',
+    imagePublicId: '',
+  }
+}
+
+function createEmptyPurchaseForm(currency = 'BDT'): PurchaseFormState {
+  return {
+    productId: '',
+    supplierId: SUPPLIER_NONE,
+    quantity: '1',
+    unitCost: '',
+    currency,
+  }
+}
+
+function createEmptyWarehouseForm(): WarehouseFormState {
+  return {
+    name: '',
+    location: '',
+  }
+}
+
+function parseAmount(value: string) {
+  const normalized = value.replaceAll(',', '').trim()
+  return normalized ? Number(normalized) : 0
+}
+
+function productToForm(product: {
+  name: string
+  sku: string
+  category: string
+  warehouseId: string
+  supplierId: string
+  purchasePrice: number
+  sellingPrice: number
+  stockQty: number
+  minStock: number
+  maxStock: number
+  imageUrl?: string
+  imagePublicId?: string
+}): ProductFormState {
+  return {
+    name: product.name,
+    sku: product.sku,
+    category: product.category,
+    warehouseId: product.warehouseId,
+    supplierId: product.supplierId || SUPPLIER_NONE,
+    purchasePrice: String(product.purchasePrice),
+    sellingPrice: String(product.sellingPrice),
+    stockQty: String(product.stockQty),
+    minStock: String(product.minStock),
+    maxStock: String(product.maxStock),
+    imageUrl: product.imageUrl || '',
+    imagePublicId: product.imagePublicId || '',
+  }
+}
+
+function warehouseToForm(warehouse: { name: string; location: string }): WarehouseFormState {
+  return {
+    name: warehouse.name,
+    location: warehouse.location,
+  }
+}
+
+function statusBadgeClass(status: ReturnType<typeof getProductStatus>) {
+  if (status === 'active') {
+    return 'border-emerald-200 bg-emerald-500/10 text-emerald-700'
+  }
+
+  if (status === 'low-stock') {
+    return 'border-amber-200 bg-amber-500/10 text-amber-700'
+  }
+
+  return 'border-rose-200 bg-rose-500/10 text-rose-700'
+}
+
+function statusLabel(status: ReturnType<typeof getProductStatus>) {
+  return status.replace('-', ' ')
+}
+async function uploadProductImage(file: File): Promise<ProductImageUploadResult> {
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+  const folder = process.env.NEXT_PUBLIC_CLOUDINARY_FOLDER || 'inventory'
+
+  if (!cloudName || !uploadPreset) {
+    throw new Error('Cloudinary upload configuration is missing.')
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('upload_preset', uploadPreset)
+  formData.append('folder', folder)
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    throw new Error('Unable to upload product image.')
+  }
+
+  const result = (await response.json()) as { secure_url?: string; public_id?: string }
+  if (!result.secure_url || !result.public_id) {
+    throw new Error('Cloudinary did not return a valid image response.')
+  }
+
+  return {
+    imageUrl: result.secure_url,
+    imagePublicId: result.public_id,
+  }
+}
+
+async function deleteCloudinaryImage(publicId: string) {
+  const response = await fetch('/api/cloudinary/delete', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ publicId }),
+  })
+
+  if (!response.ok) {
+    throw new Error('Unable to delete product image.')
+  }
 }
 
 export function StockOverviewScreen() {
-  const { data, hasPermission, saveProduct, recordPurchase, loading } = useERP()
-  const products = useMemo(() => toArray(data?.products), [data?.products])
+  const {
+    data,
+    hasPermission,
+    saveProduct,
+    deleteProduct,
+    saveWarehouse,
+    deleteWarehouse,
+    recordPurchase,
+    loading,
+  } = useERP()
+
+  const products = useMemo(
+    () => [...toArray(data?.products)].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    [data?.products]
+  )
+  const purchases = useMemo(
+    () => [...toArray(data?.purchases)].sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    [data?.purchases]
+  )
   const suppliers = useMemo(() => toArray(data?.suppliers), [data?.suppliers])
   const warehouses = useMemo(() => toArray(data?.warehouses), [data?.warehouses])
+
   const [search, setSearch] = useState('')
-  const [productForm, setProductForm] = useState(emptyProduct)
-  const [purchaseForm, setPurchaseForm] = useState(emptyPurchase)
+  const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState('all')
+  const [selectedSupplierFilter, setSelectedSupplierFilter] = useState('all')
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [productForm, setProductForm] = useState<ProductFormState>(() => createEmptyProductForm())
+  const [purchaseForm, setPurchaseForm] = useState<PurchaseFormState>(() => createEmptyPurchaseForm())
+  const [warehouseForm, setWarehouseForm] = useState<WarehouseFormState>(() => createEmptyWarehouseForm())
+  const [addProductOpen, setAddProductOpen] = useState(false)
+  const [receivePurchaseOpen, setReceivePurchaseOpen] = useState(false)
+  const [warehouseOpen, setWarehouseOpen] = useState(false)
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
+  const [editingWarehouseId, setEditingWarehouseId] = useState<string | null>(null)
+  const [isSavingProduct, setIsSavingProduct] = useState(false)
+  const [isReceivingPurchase, setIsReceivingPurchase] = useState(false)
+  const [isSavingWarehouse, setIsSavingWarehouse] = useState(false)
+  const [busyProductId, setBusyProductId] = useState<string | null>(null)
+  const [busyWarehouseId, setBusyWarehouseId] = useState<string | null>(null)
+  const [activeInventoryView, setActiveInventoryView] = useState<InventoryView>('products')
+  const [productImageFile, setProductImageFile] = useState<File | null>(null)
+  const [productImagePreview, setProductImagePreview] = useState<string | null>(null)
+  const [pendingImageDeleteId, setPendingImageDeleteId] = useState<string | null>(null)
+
   const deferredSearch = useDeferredValue(search)
+  const canManageInventory = hasPermission('manage_products')
+  const currency = data?.settings.currency ?? 'BDT'
 
   const filteredProducts = useMemo(() => {
-    const query = deferredSearch.trim().toLowerCase()
-    if (!query) {
-      return products
+    let result = products
+
+    if (selectedWarehouseFilter !== 'all') {
+      result = result.filter((product) => product.warehouseId === selectedWarehouseFilter)
     }
 
-    return products.filter((product) => {
-      return [product.name, product.category, product.brand, product.sku].some((value) =>
-        value.toLowerCase().includes(query)
-      )
-    })
-  }, [deferredSearch, products])
-
-  const lowStock = products.filter((product) => product.stockQty <= product.minStock)
-  const totalInventoryValue = products.reduce((sum, product) => sum + product.purchasePrice * product.stockQty, 0)
-  const totalUnits = products.reduce((sum, product) => sum + product.stockQty, 0)
-
-  async function handleCreateProduct(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setFeedback(null)
-
-    try {
-      await saveProduct({
-        name: productForm.name,
-        category: productForm.category,
-        brand: productForm.brand,
-        sku: productForm.sku,
-        warehouseId: productForm.warehouseId,
-        supplierId: productForm.supplierId,
-        purchasePrice: Number(productForm.purchasePrice),
-        sellingPrice: Number(productForm.sellingPrice),
-        wholesalePrice: Number(productForm.wholesalePrice),
-        stockQty: Number(productForm.stockQty),
-        minStock: Number(productForm.minStock),
-        maxStock: Number(productForm.maxStock),
-        description: productForm.description,
+    if (selectedSupplierFilter !== 'all') {
+      result = result.filter((product) => {
+        const prodSupplierId = product.supplierId || SUPPLIER_NONE
+        return prodSupplierId === selectedSupplierFilter
       })
-      setProductForm(emptyProduct)
-      setFeedback('Product saved to Firebase Realtime Database.')
-    } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : 'Unable to save product.')
+    }
+
+    const query = deferredSearch.trim().toLowerCase()
+    if (query) {
+      result = result.filter((product) => {
+        const warehouseName = data?.warehouses[product.warehouseId]?.name ?? ''
+        const supplierName = data?.suppliers[product.supplierId]?.name ?? ''
+        return [product.name, product.sku, product.category, warehouseName, supplierName].join(' ').toLowerCase().includes(query)
+      })
+    }
+
+    return result
+  }, [data?.suppliers, data?.warehouses, deferredSearch, products, selectedWarehouseFilter, selectedSupplierFilter])
+
+  const lowStockProducts = useMemo(() => products.filter((product) => product.stockQty <= product.minStock), [products])
+  const totalInventoryValue = useMemo(() => products.reduce((sum, product) => sum + product.purchasePrice * product.stockQty, 0), [products])
+  const totalUnits = useMemo(() => products.reduce((sum, product) => sum + product.stockQty, 0), [products])
+  const selectedPurchaseProduct = useMemo(() => products.find((product) => product.id === purchaseForm.productId) ?? null, [products, purchaseForm.productId])
+  const purchaseTotal = parseAmount(purchaseForm.unitCost) * parseAmount(purchaseForm.quantity)
+
+  const warehouseSummaries = useMemo(() => {
+    return warehouses.map((warehouse) => {
+      const warehouseProducts = products.filter((product) => product.warehouseId === warehouse.id)
+      const warehouseUnits = warehouseProducts.reduce((sum, product) => sum + product.stockQty, 0)
+      const warehouseLowStock = warehouseProducts.filter((product) => product.stockQty <= product.minStock).length
+
+      return {
+        ...warehouse,
+        productCount: warehouseProducts.length,
+        unitCount: warehouseUnits,
+        lowStockCount: warehouseLowStock,
+      }
+    })
+  }, [products, warehouses])
+
+  function resetProductEditor() {
+    setEditingProductId(null)
+    setProductForm(createEmptyProductForm(warehouses[0]?.id ?? ''))
+    setProductImageFile(null)
+    setProductImagePreview(null)
+    setPendingImageDeleteId(null)
+  }
+
+  function resetPurchaseEditor() {
+    setPurchaseForm(createEmptyPurchaseForm(currency))
+  }
+
+  function resetWarehouseEditor() {
+    setEditingWarehouseId(null)
+    setWarehouseForm(createEmptyWarehouseForm())
+  }
+
+  function openCreateProductDialog() {
+    resetProductEditor()
+    setFeedback(null)
+    setAddProductOpen(true)
+  }
+
+  function openEditProductDialog(productId: string) {
+    const product = data?.products[productId]
+    if (!product) {
+      return
+    }
+
+    setEditingProductId(productId)
+    setProductForm(productToForm(product))
+    setProductImageFile(null)
+    setProductImagePreview(product.imageUrl ?? null)
+    setPendingImageDeleteId(null)
+    setFeedback(null)
+    setAddProductOpen(true)
+  }
+
+  function openReceivePurchaseDialog() {
+    resetPurchaseEditor()
+    setFeedback(null)
+    setReceivePurchaseOpen(true)
+  }
+
+  function openCreateWarehouseDialog() {
+    resetWarehouseEditor()
+    setFeedback(null)
+    setWarehouseOpen(true)
+  }
+
+  function openEditWarehouseDialog(warehouseId: string) {
+    const warehouse = data?.warehouses[warehouseId]
+    if (!warehouse) {
+      return
+    }
+
+    setEditingWarehouseId(warehouseId)
+    setWarehouseForm(warehouseToForm(warehouse))
+    setFeedback(null)
+    setWarehouseOpen(true)
+  }
+
+  function handleProductImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null
+    if (!file) {
+      return
+    }
+
+    setProductImageFile(file)
+    setProductImagePreview(URL.createObjectURL(file))
+    setProductForm((current) => ({
+      ...current,
+      imageUrl: '',
+      imagePublicId: '',
+    }))
+
+    if (editingProductId && data?.products[editingProductId]?.imagePublicId) {
+      setPendingImageDeleteId(data.products[editingProductId].imagePublicId ?? null)
     }
   }
 
-  async function handlePurchase(event: React.FormEvent<HTMLFormElement>) {
+  function handleRemoveProductImage() {
+    setProductImageFile(null)
+    setProductImagePreview(null)
+
+    if (productForm.imagePublicId) {
+      setPendingImageDeleteId(productForm.imagePublicId)
+    }
+
+    setProductForm((current) => ({
+      ...current,
+      imageUrl: '',
+      imagePublicId: '',
+    }))
+  }
+  async function handleSaveProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFeedback(null)
+    setIsSavingProduct(true)
 
     try {
+      let nextImageUrl = productForm.imageUrl
+      let nextImagePublicId = productForm.imagePublicId
+
+      if (productImageFile) {
+        const uploadResult = await uploadProductImage(productImageFile)
+        nextImageUrl = uploadResult.imageUrl
+        nextImagePublicId = uploadResult.imagePublicId
+      }
+
+      await saveProduct(
+        {
+          name: productForm.name,
+          sku: productForm.sku,
+          category: productForm.category,
+          warehouseId: productForm.warehouseId,
+          supplierId: productForm.supplierId === SUPPLIER_NONE ? '' : productForm.supplierId,
+          purchasePrice: parseAmount(productForm.purchasePrice),
+          sellingPrice: parseAmount(productForm.sellingPrice),
+          wholesalePrice: parseAmount(productForm.sellingPrice),
+          stockQty: parseAmount(productForm.stockQty),
+          minStock: parseAmount(productForm.minStock),
+          maxStock: parseAmount(productForm.maxStock),
+          imageUrl: nextImageUrl,
+          imagePublicId: nextImagePublicId,
+        },
+        editingProductId ?? undefined
+      )
+
+      if (pendingImageDeleteId && pendingImageDeleteId !== nextImagePublicId) {
+        await deleteCloudinaryImage(pendingImageDeleteId)
+      }
+
+      setFeedback(editingProductId ? 'Product updated successfully.' : 'Product added to inventory successfully.')
+      setAddProductOpen(false)
+      resetProductEditor()
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to save product.')
+    } finally {
+      setIsSavingProduct(false)
+    }
+  }
+
+  async function handleDeleteProduct(productId: string) {
+    const product = data?.products[productId]
+    if (!product) {
+      return
+    }
+
+    if (!window.confirm(`Delete ${product.name} from inventory?`)) {
+      return
+    }
+
+    setFeedback(null)
+    setBusyProductId(productId)
+
+    try {
+      if (product.imagePublicId) {
+        await deleteCloudinaryImage(product.imagePublicId)
+      }
+
+      await deleteProduct(productId)
+      setFeedback(`${product.name} was deleted from inventory.`)
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to delete product.')
+    } finally {
+      setBusyProductId(null)
+    }
+  }
+
+  async function handleReceivePurchase(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFeedback(null)
+    setIsReceivingPurchase(true)
+
+    try {
+      if (!purchaseForm.productId) {
+        throw new Error('Select a product before receiving stock.')
+      }
+
+      if (purchaseForm.supplierId === SUPPLIER_NONE) {
+        throw new Error('Select a supplier for this purchase.')
+      }
+
       await recordPurchase({
         productId: purchaseForm.productId,
         supplierId: purchaseForm.supplierId,
-        quantity: Number(purchaseForm.quantity),
-        unitCost: Number(purchaseForm.unitCost),
+        quantity: parseAmount(purchaseForm.quantity),
+        unitCost: parseAmount(purchaseForm.unitCost),
         currency: purchaseForm.currency,
       })
-      setPurchaseForm(emptyPurchase)
-      setFeedback('Purchase received and inventory updated in realtime.')
+
+      setFeedback('Purchase received and inventory updated successfully.')
+      setReceivePurchaseOpen(false)
+      resetPurchaseEditor()
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : 'Unable to record purchase.')
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to receive purchase.')
+    } finally {
+      setIsReceivingPurchase(false)
+    }
+  }
+
+  async function handleSaveWarehouse(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFeedback(null)
+    setIsSavingWarehouse(true)
+
+    try {
+      await saveWarehouse(
+        {
+          name: warehouseForm.name,
+          location: warehouseForm.location,
+        },
+        editingWarehouseId ?? undefined
+      )
+
+      setFeedback(editingWarehouseId ? 'Warehouse updated successfully.' : 'Warehouse added successfully.')
+      setWarehouseOpen(false)
+      resetWarehouseEditor()
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to save warehouse.')
+    } finally {
+      setIsSavingWarehouse(false)
+    }
+  }
+
+  async function handleDeleteWarehouse(warehouseId: string) {
+    const warehouse = data?.warehouses[warehouseId]
+    if (!warehouse) {
+      return
+    }
+
+    if (!window.confirm(`Delete ${warehouse.name}?`)) {
+      return
+    }
+
+    setFeedback(null)
+    setBusyWarehouseId(warehouseId)
+
+    try {
+      await deleteWarehouse(warehouseId)
+      setFeedback(`${warehouse.name} was deleted.`)
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to delete warehouse.')
+    } finally {
+      setBusyWarehouseId(null)
     }
   }
 
@@ -122,57 +557,40 @@ export function StockOverviewScreen() {
     <AdminShell active="Inventory / Stock">
       <div className="space-y-6">
         <Card className="border-border/70 shadow-sm">
-          <CardContent className="flex flex-col gap-4 p-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Inventory hub</Badge>
-                <Badge variant="outline" className="rounded-full">Realtime stock control</Badge>
-              </div>
-              <h2 className="mt-4 text-3xl font-semibold tracking-tight">Inventory and purchasing</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Add products, receive stock, and search warehouse availability from the same live dataset.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-3">
-                <p className="text-sm text-muted-foreground">Products</p>
-                <p className="mt-1 text-2xl font-semibold">{products.length}</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-3">
-                <p className="text-sm text-muted-foreground">Units in stock</p>
-                <p className="mt-1 text-2xl font-semibold">{totalUnits}</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-3">
-                <p className="text-sm text-muted-foreground">Inventory value</p>
-                <p className="mt-1 text-2xl font-semibold">{formatCurrency(totalInventoryValue, data?.settings.currency)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Inventory scope</CardTitle>
-            <CardDescription>The sidebar now groups stock movement, warranty links, and warehouse visibility together.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {[
-              ['All products', 'Keep name, model, serial, and warranty details searchable.', 'Ready'],
-              ['Stock in / stock out', 'Track the movement of goods through warehouse updates.', 'Ready'],
-              ['Warehouse-wise stock view', 'Compare availability by location and transit hub.', 'Ready'],
-              ['Low-stock alerts config', 'Tune the thresholds that drive replenishment warnings.', 'Planned'],
-              ['Warranty claims', 'Use one queue for serial-number lookup and service status.', 'Planned'],
-            ].map(([title, description, status]) => (
-              <div key={title} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{title}</p>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-                  </div>
-                  <Badge variant="outline">{status}</Badge>
+          <CardContent className="flex flex-col gap-6 p-6">
+            <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+              <div className="max-w-3xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Inventory hub</Badge>
+                  <Badge variant="outline" className="rounded-full">Products, stock, and warehouse control</Badge>
                 </div>
+                <h2 className="mt-4 text-3xl font-semibold tracking-tight">Inventory workspace</h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Manage lift and equipment stock with fast product entry, clean purchase receiving, and warehouse-level control.
+                </p>
               </div>
-            ))}
+
+              <div className="flex flex-wrap gap-3 xl:justify-end">
+                <Button className="rounded-xl" onClick={openCreateProductDialog} disabled={!canManageInventory || warehouses.length === 0}>
+                  Add product
+                </Button>
+                <Button variant="secondary" className="rounded-xl" onClick={openReceivePurchaseDialog} disabled={!canManageInventory || products.length === 0}>
+                  Receive purchase
+                </Button>
+                <Button variant="outline" className="rounded-xl" onClick={openCreateWarehouseDialog} disabled={!canManageInventory}>
+                  Add warehouse
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Products</p><p className="mt-1 text-2xl font-semibold tracking-tight">{products.length}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Units in stock</p><p className="mt-1 text-2xl font-semibold tracking-tight">{totalUnits}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Inventory value</p><p className="mt-1 text-2xl font-semibold tracking-tight">{formatCurrency(totalInventoryValue, currency)}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Low stock</p><p className="mt-1 text-2xl font-semibold tracking-tight">{lowStockProducts.length}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Warehouses</p><p className="mt-1 text-2xl font-semibold tracking-tight">{warehouses.length}</p></div>
+              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Suppliers</p><p className="mt-1 text-2xl font-semibold tracking-tight">{suppliers.length}</p></div>
+            </div>
           </CardContent>
         </Card>
 
@@ -182,229 +600,279 @@ export function StockOverviewScreen() {
           </Card>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Card className="border-border/70 shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                <ShoppingBag className="h-6 w-6" />
-              </div>
+        <Card className="border-border/70 shadow-sm">
+          <CardHeader>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Available units</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight">{totalUnits}</p>
+                <CardTitle>
+                  {activeInventoryView === 'products' ? 'Inventory list' : activeInventoryView === 'warehouses' ? 'Warehouse control' : activeInventoryView === 'low-stock' ? 'Low stock focus' : 'Recent purchases'}
+                </CardTitle>
+                <CardDescription>
+                  {activeInventoryView === 'products'
+                    ? 'Search by product, model, category, warehouse, or supplier. Edit and delete actions are available in each row.'
+                    : activeInventoryView === 'warehouses'
+                      ? 'Add, edit, and clean up warehouse locations from one place.'
+                      : activeInventoryView === 'low-stock'
+                        ? 'Products that need replenishment soon.'
+                        : 'Latest stock receipts recorded in the system.'}
+                </CardDescription>
               </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border/70 shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
-                <AlertTriangle className="h-6 w-6" />
+              <div className="flex flex-wrap gap-2">
+                <Button variant={activeInventoryView === 'products' ? 'default' : 'outline'} size="sm" className="rounded-lg" onClick={() => setActiveInventoryView('products')}>Products</Button>
+                <Button variant={activeInventoryView === 'warehouses' ? 'default' : 'outline'} size="sm" className="rounded-lg" onClick={() => setActiveInventoryView('warehouses')}>Warehouse control</Button>
+                <Button variant={activeInventoryView === 'low-stock' ? 'default' : 'outline'} size="sm" className="rounded-lg" onClick={() => setActiveInventoryView('low-stock')}>Low stock focus</Button>
+                <Button variant={activeInventoryView === 'purchases' ? 'default' : 'outline'} size="sm" className="rounded-lg" onClick={() => setActiveInventoryView('purchases')}>Recent purchases</Button>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Low stock</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight">{lowStock.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border/70 shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-600">
-                <Truck className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Suppliers</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight">{suppliers.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border/70 shadow-sm">
-            <CardContent className="flex items-center gap-4 p-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600">
-                <PackagePlus className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Warehouses</p>
-                <p className="mt-1 text-2xl font-semibold tracking-tight">{warehouses.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              {activeInventoryView === 'products' ? (
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center w-full lg:max-w-3xl">
+                  <div className="relative w-full sm:max-w-xs">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Search inventory..." />
+                  </div>
+                  <div className="w-full sm:w-48">
+                    <Select value={selectedWarehouseFilter} onValueChange={setSelectedWarehouseFilter}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="All Warehouses" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Warehouses</SelectItem>
+                        {warehouses.map((warehouse) => (
+                          <SelectItem key={warehouse.id} value={warehouse.id}>
+                            {warehouse.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-full sm:w-48">
+                    <Select value={selectedSupplierFilter} onValueChange={setSelectedSupplierFilter}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="All Suppliers" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Suppliers</SelectItem>
+                        <SelectItem value={SUPPLIER_NONE}>Not assigned</SelectItem>
+                        {suppliers.map((supplier) => (
+                          <SelectItem key={supplier.id} value={supplier.id}>
+                            {supplier.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : <div />}
 
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <Card className="border-border/70 shadow-sm">
-            <CardHeader>
-              <CardTitle>Stock report</CardTitle>
-              <CardDescription>Search by name, category, brand, or SKU. Every change updates live.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="relative mb-4 w-full sm:w-[320px]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Search stock..." />
-              </div>
-              <div className="overflow-hidden rounded-2xl border border-border/70">
+              {activeInventoryView === 'warehouses' && canManageInventory ? <Button variant="outline" size="sm" className="rounded-lg" onClick={openCreateWarehouseDialog}>Add warehouse</Button> : null}
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-border/70">
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead>Product</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead>Warehouse</TableHead>
-                      <TableHead>Stock</TableHead>
-                      <TableHead>Sell price</TableHead>
-                      <TableHead>Updated</TableHead>
-                    </TableRow>
+                    {activeInventoryView === 'products' ? (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead>Product</TableHead>
+                        <TableHead>Model / SKU</TableHead>
+                        <TableHead>Warehouse</TableHead>
+                        <TableHead>Stock</TableHead>
+                        <TableHead>Cost</TableHead>
+                        <TableHead>Sell price</TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Updated</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    ) : activeInventoryView === 'warehouses' ? (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead>Warehouse</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Products</TableHead>
+                        <TableHead>Units</TableHead>
+                        <TableHead>Low stock</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    ) : activeInventoryView === 'low-stock' ? (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead>Product</TableHead>
+                        <TableHead>Warehouse</TableHead>
+                        <TableHead>Available</TableHead>
+                        <TableHead>Minimum</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Updated</TableHead>
+                      </TableRow>
+                    ) : (
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead>Product</TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Quantity</TableHead>
+                        <TableHead>Unit cost</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Received</TableHead>
+                      </TableRow>
+                    )}
                   </TableHeader>
                   <TableBody>
-                    {filteredProducts.map((product) => {
+                    {activeInventoryView === 'products' ? filteredProducts.map((product) => {
+                      const warehouse = data?.warehouses[product.warehouseId]
+                      const supplier = data?.suppliers[product.supplierId]
+                      const status = getProductStatus(product.stockQty, product.minStock)
+
+                      return (
+                        <TableRow key={product.id}>
+                          <TableCell><div className="flex items-center gap-3">{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-14 w-14 rounded-xl border border-border/70 object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/30 text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">No image</div>}<div><p className="font-semibold text-foreground">{product.name}</p><p className="text-sm text-muted-foreground">{product.category || 'General equipment'}</p></div></div></TableCell>
+                          <TableCell className="font-medium">{product.sku}</TableCell>
+                          <TableCell><div><p className="font-medium">{warehouse?.name ?? 'Unknown warehouse'}</p><p className="text-xs text-muted-foreground">{warehouse?.location ?? 'Location unavailable'}</p></div></TableCell>
+                          <TableCell><div className="flex flex-col gap-2"><span className="font-medium">{product.stockQty} units</span><Badge variant="outline" className={statusBadgeClass(status)}>{statusLabel(status)}</Badge></div></TableCell>
+                          <TableCell>{formatCurrency(product.purchasePrice, currency)}</TableCell>
+                          <TableCell>{formatCurrency(product.sellingPrice, currency)}</TableCell>
+                          <TableCell>{supplier?.name ?? 'Not assigned'}</TableCell>
+                          <TableCell>{formatDateTime(product.updatedAt)}</TableCell>
+                          <TableCell>{canManageInventory ? <div className="flex justify-end gap-2"><Button variant="outline" size="sm" className="rounded-lg" onClick={() => openEditProductDialog(product.id)}><PencilLine className="mr-2 h-4 w-4" />Edit</Button><Button variant="outline" size="sm" className="rounded-lg border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800" onClick={() => void handleDeleteProduct(product.id)} disabled={busyProductId === product.id}><Trash2 className="mr-2 h-4 w-4" />Delete</Button></div> : <span className="text-sm text-muted-foreground">View only</span>}</TableCell>
+                        </TableRow>
+                      )
+                    }) : activeInventoryView === 'warehouses' ? warehouseSummaries.map((warehouse) => (
+                      <TableRow key={warehouse.id}>
+                        <TableCell className="font-semibold">{warehouse.name}</TableCell>
+                        <TableCell>{warehouse.location}</TableCell>
+                        <TableCell>{warehouse.productCount}</TableCell>
+                        <TableCell>{warehouse.unitCount}</TableCell>
+                        <TableCell>{warehouse.lowStockCount}</TableCell>
+                        <TableCell>{canManageInventory ? <div className="flex justify-end gap-2"><Button variant="outline" size="sm" className="rounded-lg" onClick={() => openEditWarehouseDialog(warehouse.id)}>Edit</Button><Button variant="outline" size="sm" className="rounded-lg border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800" onClick={() => void handleDeleteWarehouse(warehouse.id)} disabled={busyWarehouseId === warehouse.id}>Delete</Button></div> : <span className="text-sm text-muted-foreground">View only</span>}</TableCell>
+                      </TableRow>
+                    )) : activeInventoryView === 'low-stock' ? lowStockProducts.map((product) => {
                       const warehouse = data?.warehouses[product.warehouseId]
                       const status = getProductStatus(product.stockQty, product.minStock)
 
                       return (
                         <TableRow key={product.id}>
-                          <TableCell>
-                            <div>
-                              <p className="font-semibold">{product.name}</p>
-                              <p className="text-sm text-muted-foreground">{product.category} · {product.brand}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-medium">{product.sku}</TableCell>
+                          <TableCell><div><p className="font-semibold text-foreground">{product.name}</p><p className="text-sm text-muted-foreground">{product.sku}</p></div></TableCell>
                           <TableCell>{warehouse?.name ?? 'Unknown warehouse'}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <span>{product.stockQty}</span>
-                              <Badge variant={status === 'active' ? 'outline' : 'destructive'}>
-                                {status}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatCurrency(product.sellingPrice, data?.settings.currency)}</TableCell>
+                          <TableCell>{product.stockQty}</TableCell>
+                          <TableCell>{product.minStock}</TableCell>
+                          <TableCell><Badge variant="outline" className={statusBadgeClass(status)}>{statusLabel(status)}</Badge></TableCell>
                           <TableCell>{formatDateTime(product.updatedAt)}</TableCell>
                         </TableRow>
                       )
-                    })}
-                    {!filteredProducts.length ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                          No products matched your search.
-                        </TableCell>
+                    }) : purchases.slice(0, 10).map((purchase) => (
+                      <TableRow key={purchase.id}>
+                        <TableCell className="font-semibold">{purchase.productName}</TableCell>
+                        <TableCell>{purchase.supplierName}</TableCell>
+                        <TableCell>{purchase.quantity}</TableCell>
+                        <TableCell>{formatCurrency(purchase.unitCost, purchase.currency)}</TableCell>
+                        <TableCell>{formatCurrency(purchase.total, purchase.currency)}</TableCell>
+                        <TableCell>{formatDateTime(purchase.createdAt)}</TableCell>
                       </TableRow>
-                    ) : null}
+                    ))}
+
+                    {activeInventoryView === 'products' && !filteredProducts.length ? <TableRow><TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">No products matched your search.</TableCell></TableRow> : null}
+                    {activeInventoryView === 'warehouses' && !warehouseSummaries.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">No warehouses yet. Add one before creating products.</TableCell></TableRow> : null}
+                    {activeInventoryView === 'low-stock' && !lowStockProducts.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">No low-stock products right now.</TableCell></TableRow> : null}
+                    {activeInventoryView === 'purchases' && !purchases.length ? <TableRow><TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">No purchase receipts yet.</TableCell></TableRow> : null}
                   </TableBody>
                 </Table>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
 
-          <div className="space-y-6">
-            <Card className="border-border/70 shadow-sm">
-              <CardHeader>
-                <CardTitle>Add new product</CardTitle>
-                <CardDescription>Available to roles with inventory management permission.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {hasPermission('manage_products') ? (
-                  <form className="space-y-4" onSubmit={handleCreateProduct}>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Input placeholder="Product name" value={productForm.name} onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))} required />
-                      <Input placeholder="SKU" value={productForm.sku} onChange={(event) => setProductForm((current) => ({ ...current, sku: event.target.value }))} required />
-                      <Input placeholder="Category" value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} required />
-                      <Input placeholder="Brand" value={productForm.brand} onChange={(event) => setProductForm((current) => ({ ...current, brand: event.target.value }))} required />
+        <Dialog open={addProductOpen} onOpenChange={setAddProductOpen}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{editingProductId ? 'Edit product' : 'Add product'}</DialogTitle>
+              <DialogDescription>Use the essential fields only. This form is optimized for workshop and lift inventory records.</DialogDescription>
+            </DialogHeader>
+            {canManageInventory ? (
+              <form className="space-y-5" onSubmit={handleSaveProduct}>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Product name</p><Input placeholder="Two Post Service Lift" value={productForm.name} onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Model / SKU</p><Input placeholder="TLT240SB" value={productForm.sku} onChange={(event) => setProductForm((current) => ({ ...current, sku: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Category</p><Input placeholder="Lift Series" value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Warehouse</p><Select value={productForm.warehouseId} onValueChange={(value) => setProductForm((current) => ({ ...current, warehouseId: value }))}><SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger><SelectContent>{warehouses.map((warehouse) => (<SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>))}</SelectContent></Select></div>
+                  <div className="space-y-2 sm:col-span-2"><p className="text-sm font-medium text-foreground">Supplier</p><Select value={productForm.supplierId} onValueChange={(value) => setProductForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent><SelectItem value={SUPPLIER_NONE}>Not assigned</SelectItem>{suppliers.map((supplier) => (<SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>))}</SelectContent></Select></div>
+                </div>
+                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Purchase cost</p><Input inputMode="numeric" placeholder="330000" value={productForm.purchasePrice} onChange={(event) => setProductForm((current) => ({ ...current, purchasePrice: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Selling price</p><Input inputMode="numeric" placeholder="350000" value={productForm.sellingPrice} onChange={(event) => setProductForm((current) => ({ ...current, sellingPrice: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Opening stock</p><Input type="number" min="0" value={productForm.stockQty} onChange={(event) => setProductForm((current) => ({ ...current, stockQty: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Minimum stock</p><Input type="number" min="0" value={productForm.minStock} onChange={(event) => setProductForm((current) => ({ ...current, minStock: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Maximum stock</p><Input type="number" min="0" value={productForm.maxStock} onChange={(event) => setProductForm((current) => ({ ...current, maxStock: event.target.value }))} required /></div>
+                </div>
+                <div className="space-y-3 rounded-2xl border border-border/70 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Product image</p>
+                      <p className="text-xs text-muted-foreground">Upload one thumbnail for the product list and editor.</p>
                     </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Select value={productForm.warehouseId} onValueChange={(value) => setProductForm((current) => ({ ...current, warehouseId: value }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Warehouse" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {warehouses.map((warehouse) => (
-                            <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Select value={productForm.supplierId} onValueChange={(value) => setProductForm((current) => ({ ...current, supplierId: value }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Supplier" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {suppliers.map((supplier) => (
-                            <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <Input type="number" min="0" placeholder="Purchase price" value={productForm.purchasePrice} onChange={(event) => setProductForm((current) => ({ ...current, purchasePrice: event.target.value }))} required />
-                      <Input type="number" min="0" placeholder="Selling price" value={productForm.sellingPrice} onChange={(event) => setProductForm((current) => ({ ...current, sellingPrice: event.target.value }))} required />
-                      <Input type="number" min="0" placeholder="Wholesale price" value={productForm.wholesalePrice} onChange={(event) => setProductForm((current) => ({ ...current, wholesalePrice: event.target.value }))} required />
-                      <Input type="number" min="0" placeholder="Opening stock" value={productForm.stockQty} onChange={(event) => setProductForm((current) => ({ ...current, stockQty: event.target.value }))} required />
-                      <Input type="number" min="0" placeholder="Minimum stock" value={productForm.minStock} onChange={(event) => setProductForm((current) => ({ ...current, minStock: event.target.value }))} required />
-                      <Input type="number" min="0" placeholder="Maximum stock" value={productForm.maxStock} onChange={(event) => setProductForm((current) => ({ ...current, maxStock: event.target.value }))} required />
-                    </div>
-                    <Textarea placeholder="Description" value={productForm.description} onChange={(event) => setProductForm((current) => ({ ...current, description: event.target.value }))} rows={4} />
-                    <Button type="submit" className="w-full rounded-xl">Save product</Button>
-                  </form>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Your current role can view stock but cannot create or edit products.</p>
-                )}
-              </CardContent>
-            </Card>
+                    {(productImagePreview || productForm.imageUrl) ? <Button type="button" variant="outline" size="sm" className="rounded-lg" onClick={handleRemoveProductImage}>Delete image</Button> : null}
+                  </div>
+                  {(productImagePreview || productForm.imageUrl) ? <img src={productImagePreview ?? productForm.imageUrl} alt={productForm.name || 'Product preview'} className="h-32 w-32 rounded-2xl border border-border/70 object-cover" /> : <div className="flex h-32 w-32 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/30 text-xs uppercase tracking-[0.2em] text-muted-foreground">No image</div>}
+                  <Input type="file" accept="image/*" onChange={handleProductImageChange} />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setAddProductOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={isSavingProduct}>{isSavingProduct ? 'Saving...' : editingProductId ? 'Update product' : 'Save product'}</Button>
+                </DialogFooter>
+              </form>
+            ) : <p className="text-sm text-muted-foreground">Your current role can view stock but cannot create or edit products.</p>}
+          </DialogContent>
+        </Dialog>
 
-            <Card className="border-border/70 shadow-sm">
-              <CardHeader>
-                <CardTitle>Receive purchase</CardTitle>
-                <CardDescription>Increase stock and log a purchase transaction instantly.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {hasPermission('manage_products') ? (
-                  <form className="space-y-4" onSubmit={handlePurchase}>
-                    <Select value={purchaseForm.productId} onValueChange={(value) => setPurchaseForm((current) => ({ ...current, productId: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map((product) => (
-                          <SelectItem key={product.id} value={product.id}>{product.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={purchaseForm.supplierId} onValueChange={(value) => setPurchaseForm((current) => ({ ...current, supplierId: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Supplier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {suppliers.map((supplier) => (
-                          <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select value={purchaseForm.currency} onValueChange={(value) => setPurchaseForm((current) => ({ ...current, currency: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Currency" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {['BDT', 'USD', 'CNY', 'EUR'].map((currency) => (
-                          <SelectItem key={currency} value={currency}>{currency}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <Input type="number" min="1" value={purchaseForm.quantity} onChange={(event) => setPurchaseForm((current) => ({ ...current, quantity: event.target.value }))} required />
-                      <Input type="number" min="0" value={purchaseForm.unitCost} onChange={(event) => setPurchaseForm((current) => ({ ...current, unitCost: event.target.value }))} required />
-                    </div>
-                    <Button type="submit" variant="secondary" className="w-full rounded-xl">Receive stock</Button>
-                  </form>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Your current role cannot record inbound purchases.</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        <Dialog open={receivePurchaseOpen} onOpenChange={setReceivePurchaseOpen}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Receive purchase</DialogTitle>
+              <DialogDescription>Select a product, confirm the supplier, and post the incoming quantity to stock.</DialogDescription>
+            </DialogHeader>
+            {canManageInventory ? (
+              <form className="space-y-5" onSubmit={handleReceivePurchase}>
+                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Product</p><Select value={purchaseForm.productId} onValueChange={(value) => { const product = data?.products[value]; setPurchaseForm((current) => ({ ...current, productId: value, supplierId: product?.supplierId || SUPPLIER_NONE, unitCost: product ? String(product.purchasePrice) : current.unitCost })) }}><SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger><SelectContent>{products.map((product) => (<SelectItem key={product.id} value={product.id}>{product.name}</SelectItem>))}</SelectContent></Select></div>
+                {selectedPurchaseProduct ? <div className="rounded-2xl border border-border/70 bg-muted/30 p-4"><div className="grid gap-3 sm:grid-cols-3"><div><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current stock</p><p className="mt-1 text-lg font-semibold">{selectedPurchaseProduct.stockQty} units</p></div><div><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Warehouse</p><p className="mt-1 text-lg font-semibold">{data?.warehouses[selectedPurchaseProduct.warehouseId]?.name ?? 'Unknown'}</p></div><div><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Last cost</p><p className="mt-1 text-lg font-semibold">{formatCurrency(selectedPurchaseProduct.purchasePrice, currency)}</p></div></div></div> : null}
+                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Supplier</p><Select value={purchaseForm.supplierId} onValueChange={(value) => setPurchaseForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent><SelectItem value={SUPPLIER_NONE}>Select supplier</SelectItem>{suppliers.map((supplier) => (<SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>))}</SelectContent></Select></div>
+                <div className="grid gap-5 sm:grid-cols-2"><div className="space-y-2"><p className="text-sm font-medium text-foreground">Quantity received</p><Input type="number" min="1" value={purchaseForm.quantity} onChange={(event) => setPurchaseForm((current) => ({ ...current, quantity: event.target.value }))} required /></div><div className="space-y-2"><p className="text-sm font-medium text-foreground">Unit cost</p><Input inputMode="numeric" placeholder="330000" value={purchaseForm.unitCost} onChange={(event) => setPurchaseForm((current) => ({ ...current, unitCost: event.target.value }))} required /></div></div>
+                <div className="grid gap-5 sm:grid-cols-2"><div className="space-y-2"><p className="text-sm font-medium text-foreground">Currency</p><Select value={purchaseForm.currency} onValueChange={(value) => setPurchaseForm((current) => ({ ...current, currency: value }))}><SelectTrigger><SelectValue placeholder="Select currency" /></SelectTrigger><SelectContent>{currencyOptions.map((currencyOption) => (<SelectItem key={currencyOption} value={currencyOption}>{currencyOption}</SelectItem>))}</SelectContent></Select></div><div className="space-y-2 rounded-2xl border border-border/70 p-4"><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Purchase total</p><p className="mt-1 text-2xl font-semibold">{formatCurrency(purchaseTotal, purchaseForm.currency)}</p><p className="mt-1 text-sm text-muted-foreground">Stock after receive: {(selectedPurchaseProduct?.stockQty ?? 0) + parseAmount(purchaseForm.quantity)} units</p></div></div>
+                <DialogFooter><Button type="button" variant="outline" onClick={() => setReceivePurchaseOpen(false)}>Cancel</Button><Button type="submit" variant="secondary" disabled={isReceivingPurchase}>{isReceivingPurchase ? 'Posting...' : 'Receive stock'}</Button></DialogFooter>
+              </form>
+            ) : <p className="text-sm text-muted-foreground">Your current role cannot record inbound purchases.</p>}
+          </DialogContent>
+        </Dialog>
 
-        {loading ? (
-          <Card className="border-border/70 shadow-sm">
-            <CardContent className="p-4 text-sm text-muted-foreground">Loading inventory...</CardContent>
-          </Card>
-        ) : null}
+        <Dialog open={warehouseOpen} onOpenChange={setWarehouseOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editingWarehouseId ? 'Edit warehouse' : 'Add warehouse'}</DialogTitle>
+              <DialogDescription>Keep storage names and locations clean so product assignment stays clear for the team.</DialogDescription>
+            </DialogHeader>
+            {canManageInventory ? (
+              <form className="space-y-5" onSubmit={handleSaveWarehouse}>
+                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Warehouse name</p><Input placeholder="Dhaka Main Warehouse" value={warehouseForm.name} onChange={(event) => setWarehouseForm((current) => ({ ...current, name: event.target.value }))} required /></div>
+                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Location</p><Input placeholder="Mirpur, Dhaka" value={warehouseForm.location} onChange={(event) => setWarehouseForm((current) => ({ ...current, location: event.target.value }))} required /></div>
+                <DialogFooter><Button type="button" variant="outline" onClick={() => setWarehouseOpen(false)}>Cancel</Button><Button type="submit" disabled={isSavingWarehouse}>{isSavingWarehouse ? 'Saving...' : editingWarehouseId ? 'Update warehouse' : 'Save warehouse'}</Button></DialogFooter>
+              </form>
+            ) : <p className="text-sm text-muted-foreground">Your current role cannot manage warehouse records.</p>}
+          </DialogContent>
+        </Dialog>
+
+        {loading ? <Card className="border-border/70 shadow-sm"><CardContent className="p-4 text-sm text-muted-foreground">Loading inventory...</CardContent></Card> : null}
       </div>
     </AdminShell>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

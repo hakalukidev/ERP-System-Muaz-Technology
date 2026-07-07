@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   ActivityRecord,
   ERPData,
   NotificationRecord,
@@ -74,12 +74,18 @@ export function hasPermission(data: ERPData | null, user: UserRecord | null, per
   return getPermissions(data, user).includes(permission)
 }
 
-export function buildDashboardSnapshot(data: ERPData | null) {
+export function buildDashboardSnapshot(data: ERPData | null, roleId?: string) {
   const orders = sortByCreatedAtDesc(toArray(data?.orders))
   const purchases = sortByCreatedAtDesc(toArray(data?.purchases))
   const products = toArray(data?.products)
   const tasks = toArray(data?.tasks)
-  const notifications = sortByCreatedAtDesc(toArray(data?.notifications))
+  const rawNotifications = sortByCreatedAtDesc(toArray(data?.notifications))
+  const notifications = rawNotifications.filter((item) => {
+    if (!roleId) return true
+    if (roleId === 'admin') return true
+    if (!item.roles || item.roles.length === 0) return true
+    return item.roles.includes(roleId)
+  })
   const activities = sortByCreatedAtDesc(toArray(data?.activities))
 
   const todayOrders = orders.filter((order) => isSameCalendarDay(order.createdAt))

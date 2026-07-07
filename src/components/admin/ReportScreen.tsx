@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { Printer } from 'lucide-react'
 
@@ -14,7 +14,16 @@ export function ReportScreen() {
   const { data, currentUser, currentPermissions, markNotificationRead } = useERP()
   const report = buildUserReport(data)
   const permissions = toArray(data?.permissions)
-  const notifications = toArray(data?.notifications).sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+
+  const roleId = currentUser?.roleId
+  const notifications = toArray(data?.notifications)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .filter((item) => {
+      if (!roleId) return true
+      if (roleId === 'admin') return true
+      if (!item.roles || item.roles.length === 0) return true
+      return item.roles.includes(roleId)
+    })
   const totalRevenue = report.reduce((sum, row) => sum + row.revenue, 0)
   const totalDue = report.reduce((sum, row) => sum + row.due, 0)
 

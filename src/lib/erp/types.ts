@@ -1,4 +1,4 @@
-﻿export type PermissionDefinition = {
+export type PermissionDefinition = {
   id: string
   label: string
   description: string
@@ -62,6 +62,8 @@ export type ProductRecord = {
   maxStock: number
   status: ProductStatus
   description: string
+  imageUrl?: string
+  imagePublicId?: string
   createdAt: string
   updatedAt: string
 }
@@ -131,6 +133,7 @@ export type NotificationRecord = {
   level: 'info' | 'warning' | 'critical'
   read: boolean
   createdAt: string
+  roles?: string[]
 }
 
 export type ActivityRecord = {
@@ -169,7 +172,28 @@ export type ERPData = {
   }
 }
 
-export type ProductInput = Omit<ProductRecord, 'id' | 'status' | 'createdAt' | 'updatedAt'>
+export type ProductInput = {
+  name: string
+  category?: string
+  brand?: string
+  sku: string
+  warehouseId: string
+  supplierId?: string
+  purchasePrice: number
+  sellingPrice: number
+  wholesalePrice?: number
+  stockQty: number
+  minStock: number
+  maxStock: number
+  description?: string
+  imageUrl?: string
+  imagePublicId?: string
+}
+
+export type WarehouseInput = {
+  name: string
+  location: string
+}
 
 export type PurchaseInput = {
   productId: string
@@ -204,3 +228,6 @@ export type UserInput = {
   roleId: string
   title: string
 }
+
+
+

@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import Image from 'next/image'
 import Link from 'next/link'
@@ -31,6 +31,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { LoginScreen } from '@/components/auth/LoginScreen'
 import { useERP } from '@/lib/erp/provider'
 import { cn } from '@/lib/utils'
@@ -229,7 +235,7 @@ function SidebarContent({
 
 export function AdminShell({ active, children }: AdminShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { currentUser, data, seedDemoData, logout } = useERP()
+  const { currentUser, data, seedDemoData, logout, markNotificationRead } = useERP()
 
   const allNavigationItems = navigationGroups.flatMap((group) => group.items)
 
@@ -238,7 +244,22 @@ export function AdminShell({ active, children }: AdminShellProps) {
     [active, allNavigationItems]
   )
 
-  const unreadNotifications = Object.values(data?.notifications ?? {}).filter((item) => !item.read).length
+  const filteredNotifications = useMemo(() => {
+    const rawList = Object.values(data?.notifications ?? {})
+    const sorted = rawList.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const roleId = currentUser?.roleId
+    if (!roleId) return []
+    return sorted.filter((item) => {
+      if (!item.roles || item.roles.length === 0) return true
+      if (roleId === 'admin') return true
+      return item.roles.includes(roleId)
+    })
+  }, [data?.notifications, currentUser?.roleId])
+
+  const unreadNotifications = useMemo(() => {
+    return filteredNotifications.filter((item) => !item.read).length
+  }, [filteredNotifications])
+
   const roleName = currentUser ? data?.roles[currentUser.roleId]?.name ?? currentUser.roleId : 'Loading'
 
   if (!currentUser) {
@@ -291,6 +312,73 @@ export function AdminShell({ active, children }: AdminShellProps) {
 
                 <div className="flex items-center gap-2">
                   <ThemeToggle className="hidden sm:inline-flex" />
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="icon" className="relative rounded-full">
+                        <Bell className="h-4 w-4" />
+                        {unreadNotifications > 0 ? (
+                          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground animate-pulse">
+                            {unreadNotifications}
+                          </span>
+                        ) : null}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-80 p-0 rounded-2xl border-border/70 bg-popover text-popover-foreground shadow-xl">
+                      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3 bg-muted/20">
+                        <p className="font-semibold text-sm">Notifications</p>
+                        {unreadNotifications > 0 ? (
+                          <Badge variant="destructive" className="rounded-full text-[10px] py-0 px-2 font-semibold">
+                            {unreadNotifications} unread
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="max-h-80 overflow-y-auto p-2 space-y-1">
+                        {filteredNotifications.length === 0 ? (
+                          <p className="text-center py-6 text-xs text-muted-foreground">No notifications</p>
+                        ) : (
+                          filteredNotifications.slice(0, 10).map((notification) => (
+                            <DropdownMenuItem
+                              key={notification.id}
+                              className={cn(
+                                "flex flex-col items-start gap-1 p-2.5 rounded-xl transition-all cursor-pointer focus:bg-muted/60 focus:text-foreground",
+                                !notification.read ? "bg-primary/5 dark:bg-primary/10" : ""
+                              )}
+                              onClick={() => {
+                                if (!notification.read) {
+                                  void markNotificationRead(notification.id)
+                                }
+                              }}
+                            >
+                              <div className="flex w-full items-center justify-between gap-2">
+                                <span className={cn(
+                                  "font-semibold text-xs",
+                                  notification.level === 'critical' ? 'text-destructive' :
+                                  notification.level === 'warning' ? 'text-amber-600 dark:text-amber-400' :
+                                  'text-foreground'
+                                )}>
+                                  {notification.title}
+                                </span>
+                                {!notification.read && (
+                                  <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{notification.body}</p>
+                              <span className="text-[9px] text-muted-foreground/60 mt-1">
+                                {new Date(notification.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} · {new Date(notification.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </DropdownMenuItem>
+                          ))
+                        )}
+                      </div>
+                      <div className="border-t border-border/60 p-2 text-center bg-muted/10">
+                        <Button asChild variant="ghost" className="w-full text-xs rounded-xl h-8">
+                          <Link href="/admin/reports">View all in reports</Link>
+                        </Button>
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
                   <Button variant="outline" size="sm" className="rounded-full" onClick={() => void seedDemoData()}>
                     <RefreshCcw className="mr-2 h-4 w-4" />
                     Reset demo data
@@ -307,10 +395,6 @@ export function AdminShell({ active, children }: AdminShellProps) {
                   <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5">
                     <span className="h-2 w-2 rounded-full bg-emerald-500" />
                     Realtime sync active
-                  </span>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5">
-                    <Bell className="h-4 w-4" />
-                    {unreadNotifications} unread notifications
                   </span>
                 </div>
 
@@ -330,7 +414,6 @@ export function AdminShell({ active, children }: AdminShellProps) {
 
           <footer className="border-t border-border/60 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
             <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p>Next.js + Firebase Realtime Database ERP workspace with live inventory, sales, and operations data.</p>
               <p>{data?.settings.companyName ?? 'IMS'} · {data?.settings.timezone ?? 'Asia/Dhaka'}</p>
             </div>
           </footer>
@@ -339,3 +422,4 @@ export function AdminShell({ active, children }: AdminShellProps) {
     </div>
   )
 }
+

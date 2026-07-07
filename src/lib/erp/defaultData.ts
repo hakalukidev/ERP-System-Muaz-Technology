@@ -1,4 +1,4 @@
-﻿import type { ERPData } from '@/lib/erp/types'
+import type { ERPData } from '@/lib/erp/types'
 
 function isoNow() {
   return new Date().toISOString()
@@ -441,6 +441,7 @@ export function createDefaultERPData(): ERPData {
         level: 'warning',
         read: false,
         createdAt: shiftDays(0),
+        roles: ['admin', 'store_manager'],
       },
       note_1002: {
         id: 'note_1002',
@@ -449,6 +450,7 @@ export function createDefaultERPData(): ERPData {
         level: 'info',
         read: false,
         createdAt: shiftDays(0),
+        roles: ['admin', 'sales_person', 'accountant'],
       },
       note_1003: {
         id: 'note_1003',
@@ -457,6 +459,7 @@ export function createDefaultERPData(): ERPData {
         level: 'critical',
         read: false,
         createdAt: shiftDays(-1),
+        roles: ['admin', 'accountant'],
       },
     },
     activities: {

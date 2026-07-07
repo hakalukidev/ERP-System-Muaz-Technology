@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import {
   createContext,
@@ -21,6 +21,7 @@ import type {
   TaskRecord,
   UserInput,
   UserRecord,
+  WarehouseInput,
 } from '@/lib/erp/types'
 import {
   createId,
@@ -46,7 +47,10 @@ type ERPContextValue = {
   createUser: (input: UserInput) => Promise<void>
   hasPermission: (permission: string) => boolean
   seedDemoData: () => Promise<void>
-  saveProduct: (input: ProductInput) => Promise<void>
+  saveProduct: (input: ProductInput, productId?: string) => Promise<void>
+  deleteProduct: (productId: string) => Promise<void>
+  saveWarehouse: (input: WarehouseInput, warehouseId?: string) => Promise<void>
+  deleteWarehouse: (warehouseId: string) => Promise<void>
   recordPurchase: (input: PurchaseInput) => Promise<void>
   createOrder: (input: OrderInput) => Promise<void>
   updateOrderStatus: (orderId: string, status: OrderRecord['status']) => Promise<void>
@@ -131,6 +135,33 @@ function getDatabaseOrThrow() {
   }
 
   return database
+}
+
+function normalizeProductInput(input: ProductInput) {
+  return {
+    name: input.name.trim(),
+    category: input.category?.trim() ?? '',
+    brand: input.brand?.trim() ?? '',
+    sku: input.sku.trim().toUpperCase(),
+    warehouseId: input.warehouseId,
+    supplierId: input.supplierId?.trim() ?? '',
+    purchasePrice: input.purchasePrice,
+    sellingPrice: input.sellingPrice,
+    wholesalePrice: input.wholesalePrice ?? input.sellingPrice,
+    stockQty: input.stockQty,
+    minStock: input.minStock,
+    maxStock: input.maxStock,
+    description: input.description?.trim() ?? '',
+    imageUrl: input.imageUrl?.trim() ?? '',
+    imagePublicId: input.imagePublicId?.trim() ?? '',
+  }
+}
+
+function normalizeWarehouseInput(input: WarehouseInput) {
+  return {
+    name: input.name.trim(),
+    location: input.location.trim(),
+  }
 }
 
 export function ERPProvider({ children }: { children: ReactNode }) {
@@ -254,7 +285,12 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     })
   }
 
-  async function writeNotification(title: string, body: string, level: 'info' | 'warning' | 'critical') {
+  async function writeNotification(
+    title: string,
+    body: string,
+    level: 'info' | 'warning' | 'critical',
+    roles?: string[]
+  ) {
     const db = getDatabaseOrThrow()
     const notificationId = createId('notification')
     await update(ref(db, 'erp/notifications'), {
@@ -265,28 +301,166 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         level,
         read: false,
         createdAt: new Date().toISOString(),
+        roles: roles || null,
       },
     })
   }
 
-  async function saveProduct(input: ProductInput) {
+  async function saveProduct(input: ProductInput, productId?: string) {
+    if (!data) {
+      return
+    }
+
+    const normalized = normalizeProductInput(input)
+
+    if (!normalized.name) {
+      throw new Error('Product name is required.')
+    }
+
+    if (!normalized.sku) {
+      throw new Error('SKU or model code is required.')
+    }
+
+    if (!data.warehouses[normalized.warehouseId]) {
+      throw new Error('Select a valid warehouse.')
+    }
+
+    if (normalized.supplierId && !data.suppliers[normalized.supplierId]) {
+      throw new Error('Selected supplier was not found.')
+    }
+
     const db = getDatabaseOrThrow()
-    const id = createId('product')
+    const existingProduct = productId ? data.products[productId] : null
+    const id = existingProduct?.id ?? createId('product')
     const now = new Date().toISOString()
     const product = {
       id,
-      ...input,
-      status: getProductStatus(input.stockQty, input.minStock),
-      createdAt: now,
+      ...normalized,
+      status: getProductStatus(normalized.stockQty, normalized.minStock),
+      createdAt: existingProduct?.createdAt ?? now,
       updatedAt: now,
     }
 
     await update(ref(db, 'erp/products'), { [id]: product })
-    await writeActivity('product_created', 'inventory', `Added ${product.name} with ${product.stockQty} units in stock.`)
+    await writeActivity(
+      existingProduct ? 'product_updated' : 'product_created',
+      'inventory',
+      existingProduct
+        ? `Updated ${product.name} inventory details.`
+        : `Added ${product.name} with ${product.stockQty} units in stock.`
+    )
+
+    if (!existingProduct) {
+      await writeNotification(
+        'Product added',
+        `${product.name} has been added to inventory by ${currentUser?.name ?? 'Admin'}.`,
+        'info',
+        ['admin', 'store_manager', 'sales_person']
+      )
+    } else {
+      if (existingProduct.stockQty !== product.stockQty) {
+        await writeNotification(
+          'Stock adjusted',
+          `${product.name} stock level was adjusted from ${existingProduct.stockQty} to ${product.stockQty} by ${currentUser?.name ?? 'Admin'}.`,
+          'warning',
+          ['admin', 'store_manager']
+        )
+      } else {
+        await writeNotification(
+          'Product details updated',
+          `${product.name} details were updated by ${currentUser?.name ?? 'Admin'}.`,
+          'info',
+          ['admin', 'store_manager']
+        )
+      }
+    }
 
     if (product.stockQty <= product.minStock) {
-      await writeNotification('Low stock alert', `${product.name} is already at or below its minimum stock.`, 'warning')
+      await writeNotification(
+        'Low stock alert',
+        `${product.name} is already at or below its minimum stock (${product.stockQty}/${product.minStock}).`,
+        'warning',
+        ['admin', 'store_manager']
+      )
     }
+  }
+
+  async function deleteProduct(productId: string) {
+    if (!data) {
+      return
+    }
+
+    const product = data.products[productId]
+    if (!product) {
+      throw new Error('Product not found.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), {
+      [`products/${productId}`]: null,
+    })
+    await writeActivity('product_deleted', 'inventory', `Deleted ${product.name} from inventory.`)
+    await writeNotification(
+      'Product deleted',
+      `${product.name} was deleted from inventory by ${currentUser?.name ?? 'Admin'}.`,
+      'warning',
+      ['admin', 'store_manager']
+    )
+  }
+
+  async function saveWarehouse(input: WarehouseInput, warehouseId?: string) {
+    if (!data) {
+      return
+    }
+
+    const normalized = normalizeWarehouseInput(input)
+
+    if (!normalized.name) {
+      throw new Error('Warehouse name is required.')
+    }
+
+    if (!normalized.location) {
+      throw new Error('Warehouse location is required.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const existingWarehouse = warehouseId ? data.warehouses[warehouseId] : null
+    const id = existingWarehouse?.id ?? createId('warehouse')
+    const warehouse = {
+      id,
+      ...normalized,
+    }
+
+    await update(ref(db, 'erp/warehouses'), { [id]: warehouse })
+    await writeActivity(
+      existingWarehouse ? 'warehouse_updated' : 'warehouse_created',
+      'warehouse',
+      existingWarehouse
+        ? `Updated ${warehouse.name} warehouse details.`
+        : `Added ${warehouse.name} warehouse.`
+    )
+  }
+
+  async function deleteWarehouse(warehouseId: string) {
+    if (!data) {
+      return
+    }
+
+    const warehouse = data.warehouses[warehouseId]
+    if (!warehouse) {
+      throw new Error('Warehouse not found.')
+    }
+
+    const assignedProducts = Object.values(data.products).filter((product) => product.warehouseId === warehouseId)
+    if (assignedProducts.length > 0) {
+      throw new Error('Move or delete the products in this warehouse before removing it.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), {
+      [`warehouses/${warehouseId}`]: null,
+    })
+    await writeActivity('warehouse_deleted', 'warehouse', `Deleted ${warehouse.name} warehouse.`)
   }
 
   async function recordPurchase(input: PurchaseInput) {
@@ -326,6 +500,12 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     })
 
     await writeActivity('purchase_received', 'inventory', `Restocked ${product.name} by ${input.quantity} units.`)
+    await writeNotification(
+      'Purchase recorded',
+      `Restocked ${product.name} by ${input.quantity} units from ${supplier.name} by ${currentUser?.name ?? 'Admin'}.`,
+      'info',
+      ['admin', 'store_manager', 'accountant']
+    )
   }
 
   async function createOrder(input: OrderInput) {
@@ -386,10 +566,20 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     })
 
     await writeActivity('order_created', 'sales', `Created order for ${customer.name} with ${input.quantity} x ${product.name}.`)
-    await writeNotification('New sales order', `${customer.name} order is awaiting fulfillment.`, 'info')
+    await writeNotification(
+      'New sales order',
+      `Order ${orderId} created for ${customer.name} by ${currentUser?.name ?? 'Admin'}. Awaiting fulfillment.`,
+      'info',
+      ['admin', 'sales_person', 'accountant']
+    )
 
     if (nextStock <= product.minStock) {
-      await writeNotification('Low stock alert', `${product.name} needs replenishment after the latest sale.`, 'warning')
+      await writeNotification(
+        'Low stock alert',
+        `${product.name} needs replenishment after the latest sale (${nextStock}/${product.minStock}).`,
+        'warning',
+        ['admin', 'store_manager']
+      )
     }
   }
 
@@ -406,6 +596,12 @@ export function ERPProvider({ children }: { children: ReactNode }) {
 
     await update(ref(db, `erp/orders/${orderId}`), { status })
     await writeActivity('order_status_changed', 'sales', `Moved order ${orderId} to ${status}.`)
+    await writeNotification(
+      'Order status updated',
+      `Order ${orderId} status was updated to "${status}" by ${currentUser?.name ?? 'Admin'}.`,
+      'info',
+      ['admin', 'sales_person', 'accountant']
+    )
   }
 
   async function createTask(input: TaskInput) {
@@ -439,6 +635,12 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     })
 
     await writeActivity('task_created', 'operations', `Assigned "${input.title}" to ${assignee.name}.`)
+    await writeNotification(
+      'New task assigned',
+      `Task "${input.title}" was assigned to ${assignee.name} by ${currentUser?.name ?? 'Admin'}.`,
+      'info',
+      ['admin', assignee.roleId]
+    )
   }
 
   async function createUser(input: UserInput) {
@@ -483,6 +685,12 @@ export function ERPProvider({ children }: { children: ReactNode }) {
 
     await update(ref(db, 'erp/users'), { [id]: user })
     await writeActivity('user_created', 'admin', `Created user ${user.name} with ${data.roles[user.roleId]?.name ?? user.roleId} access.`)
+    await writeNotification(
+      'New user registered',
+      `User ${user.name} was registered as ${data?.roles[user.roleId]?.name || user.roleId} by ${currentUser?.name ?? 'Admin'}.`,
+      'info',
+      ['admin']
+    )
   }
 
   async function updateTaskStatus(taskId: string, status: TaskRecord['status']) {
@@ -516,6 +724,9 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       hasPermission: (permission) => hasPermissionCheck(data, currentUser, permission),
       seedDemoData,
       saveProduct,
+      deleteProduct,
+      saveWarehouse,
+      deleteWarehouse,
       recordPurchase,
       createOrder,
       updateOrderStatus,
@@ -538,3 +749,6 @@ export function useERP() {
 
   return context
 }
+
+
+
