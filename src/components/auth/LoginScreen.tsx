@@ -69,7 +69,20 @@ export function LoginScreen() {
               </p>
             </div>
 
-           
+            <div className="rounded-2xl border border-border/70 bg-card/70 px-5 py-4 text-sm leading-6 text-muted-foreground shadow-sm backdrop-blur">
+              <p className="font-medium text-foreground">
+                ©{' '}
+                <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
+                  hakaluki.dev
+                </a>
+              </p>
+              <p className="mt-1">
+                Developed by{' '}
+                <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
+                  hakaluki.dev
+                </a>
+              </p>
+            </div>
           </section>
 
           <section className="mx-auto w-full max-w-sm">
@@ -122,6 +135,17 @@ export function LoginScreen() {
             </div>
           </section>
         </div>
+
+        <footer className="border-t border-border/60 px-6 py-4 text-center text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground sm:px-10 lg:hidden">
+          ©{' '}
+          <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
+            hakaluki.dev
+          </a>
+          {' '}· Developed by{' '}
+          <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
+            hakaluki.dev
+          </a>
+        </footer>
       </div>
     </main>
   )

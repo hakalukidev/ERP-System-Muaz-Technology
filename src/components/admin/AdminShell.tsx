@@ -226,7 +226,22 @@ function SidebarContent({
           ))}
         </div>
 
-       
+        <div className="pt-4">
+          <div className="rounded-2xl border border-sidebar-border/80 bg-sidebar-accent/40 px-4 py-4 text-xs leading-5 text-sidebar-foreground/70">
+            <p className="font-medium text-sidebar-foreground">
+              ©{' '}
+              <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-sidebar-foreground hover:underline">
+                hakaluki.dev
+              </a>
+            </p>
+            <p className="mt-1">
+              Developed by{' '}
+              <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-sidebar-foreground hover:underline">
+                hakaluki.dev
+              </a>
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   )
