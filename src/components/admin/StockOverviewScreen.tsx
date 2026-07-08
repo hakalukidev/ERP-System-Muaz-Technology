@@ -38,6 +38,8 @@ type ProductFormState = {
   name: string
   sku: string
   category: string
+  serialNumber: string
+  warrantyMonths: string
   warehouseId: string
   supplierId: string
   purchasePrice: string
@@ -74,6 +76,8 @@ function createEmptyProductForm(warehouseId = ''): ProductFormState {
     name: '',
     sku: '',
     category: '',
+    serialNumber: '',
+    warrantyMonths: '0',
     warehouseId,
     supplierId: SUPPLIER_NONE,
     purchasePrice: '',
@@ -112,6 +116,8 @@ function productToForm(product: {
   name: string
   sku: string
   category: string
+  serialNumber?: string
+  warrantyMonths?: number
   warehouseId: string
   supplierId: string
   purchasePrice: number
@@ -126,6 +132,8 @@ function productToForm(product: {
     name: product.name,
     sku: product.sku,
     category: product.category,
+    serialNumber: product.serialNumber ?? '',
+    warrantyMonths: String(product.warrantyMonths ?? 0),
     warehouseId: product.warehouseId,
     supplierId: product.supplierId || SUPPLIER_NONE,
     purchasePrice: String(product.purchasePrice),
@@ -230,6 +238,10 @@ export function StockOverviewScreen() {
   )
   const suppliers = useMemo(() => toArray(data?.suppliers), [data?.suppliers])
   const warehouses = useMemo(() => toArray(data?.warehouses), [data?.warehouses])
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort(),
+    [products]
+  )
 
   const [search, setSearch] = useState('')
   const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState('all')
@@ -419,6 +431,8 @@ export function StockOverviewScreen() {
           name: productForm.name,
           sku: productForm.sku,
           category: productForm.category,
+          serialNumber: productForm.serialNumber,
+          warrantyMonths: parseAmount(productForm.warrantyMonths),
           warehouseId: productForm.warehouseId,
           supplierId: productForm.supplierId === SUPPLIER_NONE ? '' : productForm.supplierId,
           purchasePrice: parseAmount(productForm.purchasePrice),
@@ -711,7 +725,7 @@ export function StockOverviewScreen() {
                       return (
                         <TableRow key={product.id}>
                           <TableCell><div className="flex items-center gap-3">{product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="h-14 w-14 rounded-xl border border-border/70 object-cover" /> : <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/30 text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">No image</div>}<div><p className="font-semibold text-foreground">{product.name}</p><p className="text-sm text-muted-foreground">{product.category || 'General equipment'}</p></div></div></TableCell>
-                          <TableCell className="font-medium">{product.sku}</TableCell>
+                          <TableCell className="font-medium"><p>{product.sku}</p>{product.serialNumber ? <p className="text-xs font-normal text-muted-foreground">SN: {product.serialNumber}</p> : null}{product.warrantyMonths ? <p className="text-xs font-normal text-muted-foreground">{product.warrantyMonths}mo warranty</p> : null}</TableCell>
                           <TableCell><div><p className="font-medium">{warehouse?.name ?? 'Unknown warehouse'}</p><p className="text-xs text-muted-foreground">{warehouse?.location ?? 'Location unavailable'}</p></div></TableCell>
                           <TableCell><div className="flex flex-col gap-2"><span className="font-medium">{product.stockQty} units</span><Badge variant="outline" className={statusBadgeClass(status)}>{statusLabel(status)}</Badge></div></TableCell>
                           <TableCell>{formatCurrency(product.purchasePrice, currency)}</TableCell>
@@ -777,16 +791,18 @@ export function StockOverviewScreen() {
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Product name</p><Input placeholder="Two Post Service Lift" value={productForm.name} onChange={(event) => setProductForm((current) => ({ ...current, name: event.target.value }))} required /></div>
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Model / SKU</p><Input placeholder="TLT240SB" value={productForm.sku} onChange={(event) => setProductForm((current) => ({ ...current, sku: event.target.value }))} required /></div>
-                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Category</p><Input placeholder="Lift Series" value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Category</p><Input list="product-category-options" placeholder="Lift Series" value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} /><datalist id="product-category-options">{categoryOptions.map((category) => (<option key={category} value={category} />))}</datalist></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Serial number</p><Input placeholder="SN-000123" value={productForm.serialNumber} onChange={(event) => setProductForm((current) => ({ ...current, serialNumber: event.target.value }))} /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Warranty (months)</p><Input type="number" min="0" placeholder="6" value={productForm.warrantyMonths} onChange={(event) => setProductForm((current) => ({ ...current, warrantyMonths: event.target.value }))} /></div>
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Warehouse</p><Select value={productForm.warehouseId} onValueChange={(value) => setProductForm((current) => ({ ...current, warehouseId: value }))}><SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger><SelectContent>{warehouses.map((warehouse) => (<SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>))}</SelectContent></Select></div>
                   <div className="space-y-2 sm:col-span-2"><p className="text-sm font-medium text-foreground">Supplier</p><Select value={productForm.supplierId} onValueChange={(value) => setProductForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent><SelectItem value={SUPPLIER_NONE}>Not assigned</SelectItem>{suppliers.map((supplier) => (<SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>))}</SelectContent></Select></div>
                 </div>
                 <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Purchase cost</p><Input inputMode="numeric" placeholder="330000" value={productForm.purchasePrice} onChange={(event) => setProductForm((current) => ({ ...current, purchasePrice: event.target.value }))} required /></div>
-                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Selling price</p><Input inputMode="numeric" placeholder="350000" value={productForm.sellingPrice} onChange={(event) => setProductForm((current) => ({ ...current, sellingPrice: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Purchase cost ({currency})</p><Input inputMode="numeric" placeholder="330000" value={productForm.purchasePrice} onChange={(event) => setProductForm((current) => ({ ...current, purchasePrice: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Selling price ({currency})</p><Input inputMode="numeric" placeholder="350000" value={productForm.sellingPrice} onChange={(event) => setProductForm((current) => ({ ...current, sellingPrice: event.target.value }))} required /></div>
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Opening stock</p><Input type="number" min="0" value={productForm.stockQty} onChange={(event) => setProductForm((current) => ({ ...current, stockQty: event.target.value }))} required /></div>
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Minimum stock</p><Input type="number" min="0" value={productForm.minStock} onChange={(event) => setProductForm((current) => ({ ...current, minStock: event.target.value }))} required /></div>
-                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Maximum stock</p><Input type="number" min="0" value={productForm.maxStock} onChange={(event) => setProductForm((current) => ({ ...current, maxStock: event.target.value }))} required /></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Maximum stock <span className="font-normal text-muted-foreground">(optional)</span></p><Input type="number" min="0" placeholder="No cap" value={productForm.maxStock} onChange={(event) => setProductForm((current) => ({ ...current, maxStock: event.target.value }))} /></div>
                 </div>
                 <div className="space-y-3 rounded-2xl border border-border/70 p-4">
                   <div className="flex items-center justify-between gap-3">

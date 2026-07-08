@@ -1,15 +1,28 @@
 "use client"
 
-import { useMemo, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, FileDown, Printer, ReceiptText, Wallet } from 'lucide-react'
+import { useMemo, useState, type FormEvent } from 'react'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  BarChart3,
+  FileDown,
+  LayoutGrid,
+  ListChecks,
+  Plus,
+  Printer,
+  ReceiptText,
+  Trash2,
+  Wallet,
+} from 'lucide-react'
 
 import { AdminShell } from '@/components/admin/AdminShell'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import type { OrderRecord } from '@/lib/erp/types'
+import type { ExpenseInput, OrderRecord } from '@/lib/erp/types'
 import { useERP } from '@/lib/erp/provider'
 import { formatCurrency, formatDate, toArray } from '@/lib/erp/utils'
 import { cn } from '@/lib/utils'
@@ -43,12 +56,37 @@ function getOrderCost(order: OrderRecord) {
   return order.items.reduce((sum, item) => sum + item.purchasePrice * item.quantity, 0)
 }
 
+const emptyExpenseForm = { category: '', amount: '0', note: '', date: dateInputValue() }
+
+function SectionHeader({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: typeof ArrowUpRight
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Icon className="h-4.5 w-4.5" />
+      </div>
+      <div>
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function FinancePage() {
-  const { data } = useERP()
+  const { data, saveExpense, deleteExpense } = useERP()
   const [mode, setMode] = useState<'daily' | 'monthly'>('daily')
   const [selectedDate, setSelectedDate] = useState(dateInputValue())
   const [selectedMonth, setSelectedMonth] = useState(monthInputValue())
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [expenseForm, setExpenseForm] = useState(emptyExpenseForm)
 
   const orders = useMemo(
     () => toArray(data?.orders).sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
@@ -58,9 +96,58 @@ export default function FinancePage() {
     () => toArray(data?.purchases).sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
     [data?.purchases]
   )
+  const expenses = useMemo(
+    () => toArray(data?.expenses).sort((left, right) => right.date.localeCompare(left.date)),
+    [data?.expenses]
+  )
   const customers = useMemo(() => toArray(data?.customers), [data?.customers])
   const suppliers = useMemo(() => toArray(data?.suppliers), [data?.suppliers])
   const currency = data?.settings.currency
+  const expenseCategories = useMemo(
+    () => Array.from(new Set(expenses.map((expense) => expense.category).filter(Boolean))).sort(),
+    [expenses]
+  )
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((expense) =>
+      mode === 'daily' ? isSameDate(expense.date, selectedDate) : isSameMonth(expense.date, selectedMonth)
+    )
+  }, [mode, expenses, selectedDate, selectedMonth])
+
+  const expenseTotal = useMemo(
+    () => filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [filteredExpenses]
+  )
+
+  async function handleExpenseSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setFeedback(null)
+
+    try {
+      const input: ExpenseInput = {
+        category: expenseForm.category,
+        amount: Number(expenseForm.amount),
+        note: expenseForm.note,
+        date: expenseForm.date,
+      }
+      await saveExpense(input)
+      setExpenseForm({ ...emptyExpenseForm, date: expenseForm.date })
+      setFeedback('Expense recorded.')
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to record expense.')
+    }
+  }
+
+  async function handleDeleteExpense(expenseId: string) {
+    setFeedback(null)
+
+    try {
+      await deleteExpense(expenseId)
+      setFeedback('Expense removed.')
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to delete expense.')
+    }
+  }
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) =>
@@ -85,7 +172,7 @@ export default function FinancePage() {
       0
     )
     const grossProfit = revenue - cogs
-    const netCashFlow = cashIn - purchaseExpense
+    const netCashFlow = cashIn - purchaseExpense - expenseTotal
 
     return {
       revenue,
@@ -102,7 +189,7 @@ export default function FinancePage() {
         0
       ),
     }
-  }, [filteredOrders, filteredPurchases, suppliers])
+  }, [filteredOrders, filteredPurchases, suppliers, expenseTotal])
 
   const monthlyRows = useMemo(() => {
     const year = Number(selectedMonth.slice(0, 4)) || new Date().getFullYear()
@@ -175,7 +262,7 @@ export default function FinancePage() {
         <body>
           <div class="header">
             <div>
-              <h1>${escapeHtml(data?.settings.companyName ?? 'IMS ERP')}</h1>
+              <h1>${escapeHtml(data?.settings.companyName ?? 'ERP')}</h1>
               <p>Accounting & Finance</p>
             </div>
             <div>
@@ -234,8 +321,13 @@ export default function FinancePage() {
 
   return (
     <AdminShell active="Accounting & Finance">
-      <div className="space-y-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+      <div className="space-y-8">
+        <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground">Reporting period</p>
+            <p className="text-xs text-muted-foreground">Choose a day or month to scope the figures below.</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Select value={mode} onValueChange={(value) => setMode(value as typeof mode)}>
               <SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -249,6 +341,7 @@ export default function FinancePage() {
               <Input className="w-full sm:w-52" type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
             )}
           </div>
+        </div>
 
         {feedback ? (
           <Card className="border-border/70 bg-primary/5 shadow-sm">
@@ -256,177 +349,333 @@ export default function FinancePage() {
           </Card>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ['Revenue / Sales', formatCurrency(finance.revenue, currency), ArrowUpRight, 'Total invoice value'],
-            ['Cash received', formatCurrency(finance.cashIn, currency), Wallet, 'Paid amount collected'],
-            ['Customer due', formatCurrency(finance.receivable, currency), ReceiptText, 'Receivable balance'],
-            ['Gross profit/loss', formatCurrency(finance.grossProfit, currency), finance.grossProfit >= 0 ? ArrowUpRight : ArrowDownLeft, 'Sales minus product cost'],
-          ].map(([label, value, Icon, note]) => {
-            const MetricIcon = Icon as typeof ArrowUpRight
+        {/* Section: Overview */}
+        <section className="space-y-4">
+          <SectionHeader icon={LayoutGrid} title="Overview" description="Key figures for the selected period." />
 
-            return (
-              <Card key={label as string} className="border-border/70 shadow-sm">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ['Revenue / Sales', formatCurrency(finance.revenue, currency), ArrowUpRight, 'Total invoice value'],
+              ['Cash received', formatCurrency(finance.cashIn, currency), Wallet, 'Paid amount collected'],
+              ['Customer due', formatCurrency(finance.receivable, currency), ReceiptText, 'Receivable balance'],
+              ['Gross profit/loss', formatCurrency(finance.grossProfit, currency), finance.grossProfit >= 0 ? ArrowUpRight : ArrowDownLeft, 'Sales minus product cost'],
+            ].map(([label, value, Icon, note]) => {
+              const MetricIcon = Icon as typeof ArrowUpRight
+
+              return (
+                <Card key={label as string} className="border-border/70 shadow-sm">
+                  <CardContent className="p-5">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MetricIcon className="h-4 w-4" />
+                      {label as string}
+                    </div>
+                    <p className="mt-2 text-2xl font-semibold tracking-tight">{value as string}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{note as string}</p>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ['Invoices', finance.invoices.toLocaleString('en-BD'), `${finance.unitsSold} units sold`],
+              ['COGS', formatCurrency(finance.cogs, currency), 'Product purchase cost'],
+              ['Purchase expense', formatCurrency(finance.purchaseExpense, currency), 'Inventory purchases in period'],
+              ['Net cash flow', formatCurrency(finance.netCashFlow, currency), 'Cash received minus purchases'],
+            ].map(([label, value, note]) => (
+              <Card key={label} className="border-border/70 shadow-sm">
                 <CardContent className="p-5">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <MetricIcon className="h-4 w-4" />
-                    {label as string}
-                  </div>
-                  <p className="mt-2 text-2xl font-semibold tracking-tight">{value as string}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{note as string}</p>
+                  <p className="text-sm text-muted-foreground">{label}</p>
+                  <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{note}</p>
                 </CardContent>
               </Card>
-            )
-          })}
-        </div>
+            ))}
+          </div>
+        </section>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ['Invoices', finance.invoices.toLocaleString('en-BD'), `${finance.unitsSold} units sold`],
-            ['COGS', formatCurrency(finance.cogs, currency), 'Product purchase cost'],
-            ['Purchase expense', formatCurrency(finance.purchaseExpense, currency), 'Inventory purchases in period'],
-            ['Net cash flow', formatCurrency(finance.netCashFlow, currency), 'Cash received minus purchases'],
-          ].map(([label, value, note]) => (
-            <Card key={label} className="border-border/70 shadow-sm">
-              <CardContent className="p-5">
-                <p className="text-sm text-muted-foreground">{label}</p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{note}</p>
+        <Separator />
+
+        {/* Section: Sales & Receivables */}
+        <section className="space-y-4">
+          <SectionHeader
+            icon={ReceiptText}
+            title="Sales & receivables"
+            description="Invoice ledger alongside expense, import, and payable balances."
+          />
+
+          <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader>
+                <CardTitle>Sales and invoice ledger</CardTitle>
+                <CardDescription>Download invoices as PDF from the browser print dialog.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto rounded-2xl border border-border/70">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead>Invoice</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Sales</TableHead>
+                        <TableHead>Cash</TableHead>
+                        <TableHead>Due</TableHead>
+                        <TableHead>Profit</TableHead>
+                        <TableHead className="text-right">PDF</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOrders.map((order) => {
+                        const profit = order.total - getOrderCost(order)
+
+                        return (
+                          <TableRow key={order.id} className={cn(order.due > 0 && 'bg-rose-500/10 text-rose-700 hover:bg-rose-500/15 dark:text-rose-300')}>
+                            <TableCell className="font-medium">{order.id}</TableCell>
+                            <TableCell>{formatDate(order.createdAt)}</TableCell>
+                            <TableCell>{order.customerName}</TableCell>
+                            <TableCell>{formatCurrency(order.total, currency)}</TableCell>
+                            <TableCell>{formatCurrency(order.paid, currency)}</TableCell>
+                            <TableCell>{formatCurrency(order.due, currency)}</TableCell>
+                            <TableCell>{formatCurrency(profit, currency)}</TableCell>
+                            <TableCell>
+                              <div className="flex justify-end gap-2">
+                                <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printInvoice(order)} aria-label={`Print invoice ${order.id}`}>
+                                  <Printer className="h-4 w-4" />
+                                </Button>
+                                <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printInvoice(order)} aria-label={`Download invoice ${order.id}`}>
+                                  <FileDown className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                      {filteredOrders.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                            No invoices found for this period.
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader>
+                <CardTitle>Expense and payable view</CardTitle>
+                <CardDescription>Purchase expenses, supplier import charges, and outstanding receivables.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                  <p className="text-sm text-muted-foreground">Supplier import charges</p>
+                  <p className="mt-2 text-2xl font-semibold">{formatCurrency(finance.importCharges, currency)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Shipping + customs + other costs</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                  <p className="text-sm text-muted-foreground">Total customer ledger due</p>
+                  <p className="mt-2 text-2xl font-semibold">{formatCurrency(customers.reduce((sum, customer) => sum + customer.due, 0), currency)}</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
+                  <p className="text-sm text-muted-foreground">Total supplier landed cost</p>
+                  <p className="mt-2 text-2xl font-semibold">
+                    {formatCurrency(
+                      suppliers.reduce(
+                        (sum, supplier) =>
+                          sum + supplier.productCost + supplier.shippingCost + supplier.customsDuty + supplier.otherCost,
+                        0
+                      ),
+                      currency
+                    )}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Section: Expenses */}
+        <section className="space-y-4">
+          <SectionHeader
+            icon={ListChecks}
+            title="Expenses"
+            description="Record and review day-to-day running costs."
+          />
+
+          <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader>
+                <CardTitle>Record expense</CardTitle>
+                <CardDescription>Daily or monthly running costs (rent, transport, utilities, etc.).</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form className="space-y-4" onSubmit={handleExpenseSubmit}>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">
+                      Category<span className="ml-0.5 text-rose-500">*</span>
+                    </p>
+                    <Input
+                      list="expense-category-options"
+                      value={expenseForm.category}
+                      onChange={(event) => setExpenseForm((current) => ({ ...current, category: event.target.value }))}
+                      placeholder="e.g. Rent, Transport, Utilities"
+                      required
+                    />
+                    <datalist id="expense-category-options">
+                      {expenseCategories.map((category) => (
+                        <option key={category} value={category} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">
+                        Amount ({currency ?? 'BDT'})<span className="ml-0.5 text-rose-500">*</span>
+                      </p>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={expenseForm.amount}
+                        onChange={(event) => setExpenseForm((current) => ({ ...current, amount: event.target.value }))}
+                        placeholder="0"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">
+                        Date<span className="ml-0.5 text-rose-500">*</span>
+                      </p>
+                      <Input
+                        type="date"
+                        value={expenseForm.date}
+                        onChange={(event) => setExpenseForm((current) => ({ ...current, date: event.target.value }))}
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">
+                      Note <span className="font-normal text-muted-foreground">(optional)</span>
+                    </p>
+                    <Input
+                      value={expenseForm.note}
+                      onChange={(event) => setExpenseForm((current) => ({ ...current, note: event.target.value }))}
+                      placeholder="Short note about this expense"
+                    />
+                  </div>
+                  <Button type="submit" className="rounded-xl">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Save expense
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader>
+                <CardTitle>Expenses this period</CardTitle>
+                <CardDescription>Total: {formatCurrency(expenseTotal, currency)}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto rounded-2xl border border-border/70">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40 hover:bg-muted/40">
+                        <TableHead>Date</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Note</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredExpenses.map((expense) => (
+                        <TableRow key={expense.id}>
+                          <TableCell>{formatDate(expense.date)}</TableCell>
+                          <TableCell className="font-medium">{expense.category}</TableCell>
+                          <TableCell>{formatCurrency(expense.amount, currency)}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{expense.note || '-'}</TableCell>
+                          <TableCell>
+                            <div className="flex justify-end">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-9 w-9 text-destructive hover:text-destructive"
+                                onClick={() => void handleDeleteExpense(expense.id)}
+                                aria-label="Delete expense"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {filteredExpenses.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                            No expenses recorded for this period.
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* Section: Reports */}
+        <section className="space-y-4">
+          <SectionHeader icon={BarChart3} title="Reports" description="Full 12-month profit and loss breakdown." />
+
           <Card className="border-border/70 shadow-sm">
             <CardHeader>
-              <CardTitle>Sales and invoice ledger</CardTitle>
-              <CardDescription>Download invoices as PDF from the browser print dialog.</CardDescription>
+              <CardTitle>Monthly profit/loss report</CardTitle>
+              <CardDescription>Full 12-month view for the selected year.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto rounded-2xl border border-border/70">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Client</TableHead>
-                      <TableHead>Sales</TableHead>
+                      <TableHead>Month</TableHead>
+                      <TableHead>Invoices</TableHead>
+                      <TableHead>Revenue</TableHead>
                       <TableHead>Cash</TableHead>
                       <TableHead>Due</TableHead>
-                      <TableHead>Profit</TableHead>
-                      <TableHead className="text-right">PDF</TableHead>
+                      <TableHead>COGS</TableHead>
+                      <TableHead>Purchases</TableHead>
+                      <TableHead>Profit/Loss</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredOrders.map((order) => {
-                      const profit = order.total - getOrderCost(order)
-
-                      return (
-                        <TableRow key={order.id} className={cn(order.due > 0 && 'bg-rose-500/10 text-rose-700 hover:bg-rose-500/15 dark:text-rose-300')}>
-                          <TableCell className="font-medium">{order.id}</TableCell>
-                          <TableCell>{formatDate(order.createdAt)}</TableCell>
-                          <TableCell>{order.customerName}</TableCell>
-                          <TableCell>{formatCurrency(order.total, currency)}</TableCell>
-                          <TableCell>{formatCurrency(order.paid, currency)}</TableCell>
-                          <TableCell>{formatCurrency(order.due, currency)}</TableCell>
-                          <TableCell>{formatCurrency(profit, currency)}</TableCell>
-                          <TableCell>
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printInvoice(order)} aria-label={`Print invoice ${order.id}`}>
-                                <Printer className="h-4 w-4" />
-                              </Button>
-                              <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printInvoice(order)} aria-label={`Download invoice ${order.id}`}>
-                                <FileDown className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                    {filteredOrders.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
-                          No invoices found for this period.
-                        </TableCell>
+                    {monthlyRows.map((row) => (
+                      <TableRow key={row.key}>
+                        <TableCell className="font-medium">{row.month}</TableCell>
+                        <TableCell>{row.invoices}</TableCell>
+                        <TableCell>{formatCurrency(row.revenue, currency)}</TableCell>
+                        <TableCell>{formatCurrency(row.cash, currency)}</TableCell>
+                        <TableCell>{formatCurrency(row.due, currency)}</TableCell>
+                        <TableCell>{formatCurrency(row.cogs, currency)}</TableCell>
+                        <TableCell>{formatCurrency(row.expense, currency)}</TableCell>
+                        <TableCell className={cn(row.profit < 0 && 'text-destructive')}>{formatCurrency(row.profit, currency)}</TableCell>
                       </TableRow>
-                    ) : null}
+                    ))}
                   </TableBody>
                 </Table>
               </div>
             </CardContent>
           </Card>
-
-          <Card className="border-border/70 shadow-sm">
-            <CardHeader>
-              <CardTitle>Expense and payable view</CardTitle>
-              <CardDescription>Purchase expenses, supplier import charges, and outstanding receivables.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <p className="text-sm text-muted-foreground">Supplier import charges</p>
-                <p className="mt-2 text-2xl font-semibold">{formatCurrency(finance.importCharges, currency)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Shipping + customs + other costs</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <p className="text-sm text-muted-foreground">Total customer ledger due</p>
-                <p className="mt-2 text-2xl font-semibold">{formatCurrency(customers.reduce((sum, customer) => sum + customer.due, 0), currency)}</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <p className="text-sm text-muted-foreground">Total supplier landed cost</p>
-                <p className="mt-2 text-2xl font-semibold">
-                  {formatCurrency(
-                    suppliers.reduce(
-                      (sum, supplier) =>
-                        sum + supplier.productCost + supplier.shippingCost + supplier.customsDuty + supplier.otherCost,
-                      0
-                    ),
-                    currency
-                  )}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Monthly profit/loss report</CardTitle>
-            <CardDescription>Full 12-month view for the selected year.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto rounded-2xl border border-border/70">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableHead>Month</TableHead>
-                    <TableHead>Invoices</TableHead>
-                    <TableHead>Revenue</TableHead>
-                    <TableHead>Cash</TableHead>
-                    <TableHead>Due</TableHead>
-                    <TableHead>COGS</TableHead>
-                    <TableHead>Purchases</TableHead>
-                    <TableHead>Profit/Loss</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {monthlyRows.map((row) => (
-                    <TableRow key={row.key}>
-                      <TableCell className="font-medium">{row.month}</TableCell>
-                      <TableCell>{row.invoices}</TableCell>
-                      <TableCell>{formatCurrency(row.revenue, currency)}</TableCell>
-                      <TableCell>{formatCurrency(row.cash, currency)}</TableCell>
-                      <TableCell>{formatCurrency(row.due, currency)}</TableCell>
-                      <TableCell>{formatCurrency(row.cogs, currency)}</TableCell>
-                      <TableCell>{formatCurrency(row.expense, currency)}</TableCell>
-                      <TableCell className={cn(row.profit < 0 && 'text-destructive')}>{formatCurrency(row.profit, currency)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        </section>
       </div>
     </AdminShell>
   )

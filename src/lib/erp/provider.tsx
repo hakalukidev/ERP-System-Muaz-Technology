@@ -8,17 +8,23 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { get, onValue, ref, set, update } from 'firebase/database'
+import { onValue, ref, set, update } from 'firebase/database'
 
 import { createDefaultERPData } from '@/lib/erp/defaultData'
 import type {
+  CourierInput,
+  CourierRecord,
   CustomerInput,
   CustomerRecord,
   ERPData,
+  ExpenseInput,
   OrderInput,
   OrderRecord,
   ProductInput,
+  ProductRecord,
   PurchaseInput,
+  SellerInput,
+  SellerTransactionInput,
   SupplierInput,
   SupplierRecord,
   TaskInput,
@@ -49,8 +55,9 @@ type ERPContextValue = {
   logout: () => void
   switchUser: (userId: string) => void
   createUser: (input: UserInput) => Promise<void>
+  updateUser: (userId: string, input: UserInput) => Promise<void>
+  deleteUser: (userId: string) => Promise<void>
   hasPermission: (permission: string) => boolean
-  seedDemoData: () => Promise<void>
   saveCustomer: (input: CustomerInput, customerId?: string) => Promise<void>
   deleteCustomer: (customerId: string) => Promise<void>
   saveSupplier: (input: SupplierInput, supplierId?: string) => Promise<void>
@@ -65,6 +72,16 @@ type ERPContextValue = {
   createTask: (input: TaskInput) => Promise<void>
   updateTaskStatus: (taskId: string, status: TaskRecord['status']) => Promise<void>
   markNotificationRead: (notificationId: string) => Promise<void>
+  markAllNotificationsRead: (notificationIds: string[]) => Promise<void>
+  saveExpense: (input: ExpenseInput, expenseId?: string) => Promise<void>
+  deleteExpense: (expenseId: string) => Promise<void>
+  saveSeller: (input: SellerInput, sellerId?: string) => Promise<void>
+  deleteSeller: (sellerId: string) => Promise<void>
+  recordSellerTransaction: (input: SellerTransactionInput) => Promise<void>
+  deleteSellerTransaction: (transactionId: string) => Promise<void>
+  saveCourier: (input: CourierInput, courierId?: string) => Promise<void>
+  updateCourierStatus: (courierId: string, status: CourierRecord['status']) => Promise<void>
+  deleteCourier: (courierId: string) => Promise<void>
 }
 
 const ERPContext = createContext<ERPContextValue | undefined>(undefined)
@@ -113,10 +130,7 @@ function normalizeCustomerRecord(customer: CustomerRecord): CustomerRecord {
 
 function normalizeCustomerMap(customers?: Record<string, CustomerRecord> | null) {
   return Object.fromEntries(
-    Object.entries(mergeRecordMap(DEFAULT_ERP_DATA.customers, customers)).map(([id, customer]) => [
-      id,
-      normalizeCustomerRecord(customer),
-    ])
+    Object.entries(customers ?? {}).map(([id, customer]) => [id, normalizeCustomerRecord(customer)])
   )
 }
 
@@ -146,32 +160,69 @@ function normalizeSupplierRecord(supplier: SupplierRecord): SupplierRecord {
 
 function normalizeSupplierMap(suppliers?: Record<string, SupplierRecord> | null) {
   return Object.fromEntries(
-    Object.entries(mergeRecordMap(DEFAULT_ERP_DATA.suppliers, suppliers)).map(([id, supplier]) => [
-      id,
-      normalizeSupplierRecord(supplier),
-    ])
+    Object.entries(suppliers ?? {}).map(([id, supplier]) => [id, normalizeSupplierRecord(supplier)])
   )
 }
 
-function normalizeERPData(data: ERPData | null): ERPData | null {
-  if (!data) {
-    return DEFAULT_ERP_DATA
+function normalizeProductRecord(product: ProductRecord): ProductRecord {
+  return {
+    ...product,
+    serialNumber: product.serialNumber || '',
+    warrantyMonths: Number(product.warrantyMonths ?? 0),
   }
+}
+
+function normalizeProductMap(products?: Record<string, ProductRecord> | null) {
+  return Object.fromEntries(
+    Object.entries(products ?? {}).map(([id, product]) => [id, normalizeProductRecord(product)])
+  )
+}
+
+function normalizeOrderRecord(order: OrderRecord): OrderRecord {
+  const now = new Date().toISOString()
 
   return {
-    ...DEFAULT_ERP_DATA,
-    ...data,
-    roles: mergeRecordMap(DEFAULT_ERP_DATA.roles, data.roles),
-    users: mergeRecordMap(DEFAULT_ERP_DATA.users, data.users),
-    suppliers: normalizeSupplierMap(data.suppliers),
-    customers: normalizeCustomerMap(data.customers),
+    ...order,
+    billNumber: order.billNumber || `INV-${order.id.replace(/\D/g, '').slice(-6) || Date.now()}`,
+    paymentDueDate: order.paymentDueDate || order.deliveryDate || now,
+    dueReference: order.dueReference ?? '',
+    overdueNotified: order.overdueNotified ?? false,
+  }
+}
+
+function normalizeOrderMap(orders?: Record<string, OrderRecord> | null) {
+  return Object.fromEntries(
+    Object.entries(orders ?? {}).map(([id, order]) => [id, normalizeOrderRecord(order)])
+  )
+}
+
+function normalizeERPData(data: ERPData | null): ERPData {
+  const source = data ?? ({} as Partial<ERPData>)
+
+  return {
+    permissions: DEFAULT_ERP_DATA.permissions,
+    roles: mergeRecordMap(DEFAULT_ERP_DATA.roles, source.roles),
+    users: source.users ?? {},
+    warehouses: source.warehouses ?? {},
+    suppliers: normalizeSupplierMap(source.suppliers),
+    customers: normalizeCustomerMap(source.customers),
+    products: normalizeProductMap(source.products),
+    orders: normalizeOrderMap(source.orders),
+    purchases: source.purchases ?? {},
+    tasks: source.tasks ?? {},
+    notifications: source.notifications ?? {},
+    activities: source.activities ?? {},
+    expenses: source.expenses ?? {},
+    sellers: source.sellers ?? {},
+    sellerTransactions: source.sellerTransactions ?? {},
+    couriers: source.couriers ?? {},
     settings: {
       ...DEFAULT_ERP_DATA.settings,
-      ...data.settings,
+      ...source.settings,
     },
     meta: {
       ...DEFAULT_ERP_DATA.meta,
-      ...data.meta,
+      ...source.meta,
     },
   }
 }
@@ -211,6 +262,8 @@ function normalizeProductInput(input: ProductInput) {
     category: input.category?.trim() ?? '',
     brand: input.brand?.trim() ?? '',
     sku: input.sku.trim().toUpperCase(),
+    serialNumber: input.serialNumber?.trim() ?? '',
+    warrantyMonths: Math.max(input.warrantyMonths ?? 0, 0),
     warehouseId: input.warehouseId,
     supplierId: input.supplierId?.trim() ?? '',
     purchasePrice: input.purchasePrice,
@@ -218,7 +271,7 @@ function normalizeProductInput(input: ProductInput) {
     wholesalePrice: input.wholesalePrice ?? input.sellingPrice,
     stockQty: input.stockQty,
     minStock: input.minStock,
-    maxStock: input.maxStock,
+    maxStock: Math.max(input.maxStock ?? 0, 0),
     description: input.description?.trim() ?? '',
     imageUrl: input.imageUrl?.trim() ?? '',
     imagePublicId: input.imagePublicId?.trim() ?? '',
@@ -241,6 +294,7 @@ function normalizeCustomerInput(input: CustomerInput) {
     due: Math.max(input.due ?? 0, 0),
     supportStatus: input.supportStatus ?? 'none',
     supportNote: input.supportNote?.trim() ?? '',
+    isPremium: input.isPremium ?? false,
   }
 }
 
@@ -277,18 +331,6 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       const db = getDatabaseOrThrow()
       const erpRef = ref(db, 'erp')
 
-      get(erpRef)
-        .then((snapshot) => {
-          if (!snapshot.exists()) {
-            return set(erpRef, DEFAULT_ERP_DATA)
-          }
-
-          return undefined
-        })
-        .catch((reason) => {
-          setError(reason instanceof Error ? reason.message : 'Unable to initialize ERP data.')
-        })
-
       unsubscribe = onValue(
         erpRef,
         (snapshot) => {
@@ -319,10 +361,47 @@ export function ERPProvider({ children }: { children: ReactNode }) {
 
   const currentPermissions = useMemo(() => getPermissions(data, currentUser), [currentUser, data])
 
-  async function seedDemoData() {
-    const db = getDatabaseOrThrow()
-    await set(ref(db, 'erp'), DEFAULT_ERP_DATA)
-  }
+  useEffect(() => {
+    if (!data) {
+      return
+    }
+
+    const now = Date.now()
+    const overdueOrders = Object.values(data.orders).filter(
+      (order) => order.due > 0 && !order.overdueNotified && new Date(order.paymentDueDate).getTime() < now
+    )
+
+    if (overdueOrders.length === 0) {
+      return
+    }
+
+    let cancelled = false
+
+    async function flagOverdueOrders() {
+      const db = getDatabaseOrThrow()
+
+      for (const order of overdueOrders) {
+        if (cancelled) {
+          return
+        }
+
+        await update(ref(db, `erp/orders/${order.id}`), { overdueNotified: true })
+        await writeNotification(
+          'Payment overdue',
+          `${order.customerName}'s payment of ${order.due} for ${order.billNumber} is past the due date.`,
+          'critical',
+          ['admin', 'accountant']
+        )
+      }
+    }
+
+    void flagOverdueOrders()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.orders])
 
   async function login(identifier: string, password: string) {
     if (!data) {
@@ -331,20 +410,12 @@ export function ERPProvider({ children }: { children: ReactNode }) {
 
     const normalizedIdentifier = normalizeLookup(identifier)
     const normalizedPhoneIdentifier = normalizePhoneLookup(identifier)
-    const user = users.find((entry) => {
+    const authenticatedUser = users.find((entry) => {
       const loginIdMatches = normalizeLookup(entry.loginId) === normalizedIdentifier
       const phoneMatches = normalizePhoneLookup(entry.phone) === normalizedPhoneIdentifier
 
       return (loginIdMatches || phoneMatches) && entry.password === password
     })
-
-    const demoAdmin = DEFAULT_ERP_DATA.users.u_admin
-    const demoAdminMatches =
-      (normalizeLookup(demoAdmin.loginId) === normalizedIdentifier ||
-        normalizePhoneLookup(demoAdmin.phone) === normalizedPhoneIdentifier) &&
-      demoAdmin.password === password
-
-    const authenticatedUser = user ?? (demoAdminMatches ? demoAdmin : null)
 
     if (!authenticatedUser) {
       throw new Error('Invalid login ID, phone number, or password.')
@@ -546,7 +617,11 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const normalized = normalizeCustomerInput(input)
+    const existingCustomer = customerId ? data.customers[customerId] : null
+    const normalized = normalizeCustomerInput({
+      ...input,
+      isPremium: input.isPremium ?? existingCustomer?.isPremium ?? false,
+    })
 
     if (!normalized.name) {
       throw new Error('Customer name is required.')
@@ -557,7 +632,6 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     }
 
     const db = getDatabaseOrThrow()
-    const existingCustomer = customerId ? data.customers[customerId] : null
     const id = existingCustomer?.id ?? createId('customer')
     const now = new Date().toISOString()
     const customer = {
@@ -748,11 +822,15 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     const paid = Math.min(Math.max(input.paid, 0), total)
     const due = total - paid
     const now = new Date().toISOString()
+    const orderDate = input.orderDate?.trim() || now
     const nextStock = product.stockQty - input.quantity
+    const defaultDueDate = new Date(orderDate)
+    defaultDueDate.setDate(defaultDueDate.getDate() + 15)
 
     await update(ref(db, 'erp'), {
       [`orders/${orderId}`]: {
         id: orderId,
+        billNumber: input.billNumber?.trim() || `INV-${Date.now().toString().slice(-8)}`,
         customerId: customer.id,
         customerName: customer.name,
         salesPersonId: currentUser.id,
@@ -763,7 +841,10 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         paid,
         due,
         deliveryDate: input.deliveryDate,
-        createdAt: now,
+        paymentDueDate: input.paymentDueDate?.trim() || defaultDueDate.toISOString(),
+        dueReference: due > 0 ? input.dueReference || 'owner' : '',
+        overdueNotified: false,
+        createdAt: orderDate,
         items: [
           {
             productId: product.id,
@@ -908,6 +989,82 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     )
   }
 
+  async function updateUser(userId: string, input: UserInput) {
+    if (!data || !currentUser) {
+      throw new Error('You need to log in before updating users.')
+    }
+
+    if (currentUser.roleId !== 'admin') {
+      throw new Error('Only admin users can update users.')
+    }
+
+    const existing = data.users[userId]
+    if (!existing) {
+      throw new Error('User not found.')
+    }
+
+    const normalizedLoginId = normalizeLookup(input.loginId)
+    const normalizedPhone = normalizePhoneLookup(input.phone)
+
+    const loginIdExists = users.some(
+      (user) => user.id !== userId && normalizeLookup(user.loginId) === normalizedLoginId
+    )
+    if (loginIdExists) {
+      throw new Error('That login ID is already in use.')
+    }
+
+    const phoneExists = users.some(
+      (user) => user.id !== userId && normalizePhoneLookup(user.phone) === normalizedPhone
+    )
+    if (phoneExists) {
+      throw new Error('That phone number is already in use.')
+    }
+
+    if (!data.roles[input.roleId]) {
+      throw new Error('Selected role does not exist.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const updatedUser: UserRecord = {
+      ...existing,
+      name: input.name.trim(),
+      loginId: normalizedLoginId,
+      email: `${normalizedLoginId}@local`,
+      phone: normalizedPhone,
+      roleId: input.roleId,
+      title: input.title.trim(),
+      password: input.password ? input.password : existing.password,
+    }
+
+    await update(ref(db, `erp/users/${userId}`), updatedUser)
+    await writeActivity('user_updated', 'admin', `Updated user ${updatedUser.name}.`)
+  }
+
+  async function deleteUser(userId: string) {
+    if (!data || !currentUser) {
+      throw new Error('You need to log in before deleting users.')
+    }
+
+    if (currentUser.roleId !== 'admin') {
+      throw new Error('Only admin users can delete users.')
+    }
+
+    if (userId === currentUser.id) {
+      throw new Error('You cannot delete your own account.')
+    }
+
+    const existing = data.users[userId]
+    if (!existing) {
+      throw new Error('User not found.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), {
+      [`users/${userId}`]: null,
+    })
+    await writeActivity('user_deleted', 'admin', `Deleted user ${existing.name}.`)
+  }
+
   async function updateTaskStatus(taskId: string, status: TaskRecord['status']) {
     const db = getDatabaseOrThrow()
     await update(ref(db, `erp/tasks/${taskId}`), { status })
@@ -917,6 +1074,264 @@ export function ERPProvider({ children }: { children: ReactNode }) {
   async function markNotificationRead(notificationId: string) {
     const db = getDatabaseOrThrow()
     await update(ref(db, `erp/notifications/${notificationId}`), { read: true })
+  }
+
+  async function markAllNotificationsRead(notificationIds: string[]) {
+    if (notificationIds.length === 0) {
+      return
+    }
+    const db = getDatabaseOrThrow()
+    const updates: Record<string, boolean> = {}
+    for (const id of notificationIds) {
+      updates[`erp/notifications/${id}/read`] = true
+    }
+    await update(ref(db), updates)
+  }
+
+  async function saveExpense(input: ExpenseInput, expenseId?: string) {
+    if (!data || !currentUser) {
+      return
+    }
+
+    const category = input.category.trim()
+    if (!category) {
+      throw new Error('Expense category is required.')
+    }
+
+    if (input.amount <= 0) {
+      throw new Error('Expense amount must be greater than zero.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const existingExpense = expenseId ? data.expenses[expenseId] : null
+    const id = existingExpense?.id ?? createId('expense')
+    const now = new Date().toISOString()
+    const expense = {
+      id,
+      category,
+      amount: input.amount,
+      note: input.note?.trim() ?? '',
+      date: input.date?.trim() || now,
+      createdBy: existingExpense?.createdBy ?? currentUser.id,
+      createdByName: existingExpense?.createdByName ?? currentUser.name,
+      createdAt: existingExpense?.createdAt ?? now,
+    }
+
+    await update(ref(db, 'erp/expenses'), { [id]: expense })
+    await writeActivity(
+      existingExpense ? 'expense_updated' : 'expense_created',
+      'finance',
+      existingExpense ? `Updated ${category} expense entry.` : `Recorded ${category} expense of ${expense.amount}.`
+    )
+  }
+
+  async function deleteExpense(expenseId: string) {
+    if (!data) {
+      return
+    }
+
+    const expense = data.expenses[expenseId]
+    if (!expense) {
+      throw new Error('Expense not found.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), { [`expenses/${expenseId}`]: null })
+    await writeActivity('expense_deleted', 'finance', `Deleted ${expense.category} expense entry.`)
+  }
+
+  async function saveSeller(input: SellerInput, sellerId?: string) {
+    if (!data) {
+      return
+    }
+
+    const name = input.name.trim()
+    if (!name) {
+      throw new Error('Seller name is required.')
+    }
+
+    const phone = input.phone.trim()
+    if (!phone) {
+      throw new Error('Seller phone number is required.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const existingSeller = sellerId ? data.sellers[sellerId] : null
+    const id = existingSeller?.id ?? createId('seller')
+    const now = new Date().toISOString()
+    const seller = {
+      id,
+      name,
+      phone,
+      location: input.location?.trim() ?? '',
+      notes: input.notes?.trim() ?? '',
+      createdAt: existingSeller?.createdAt ?? now,
+      updatedAt: now,
+    }
+
+    await update(ref(db, 'erp/sellers'), { [id]: seller })
+    await writeActivity(
+      existingSeller ? 'seller_updated' : 'seller_created',
+      'sellers',
+      existingSeller ? `Updated ${seller.name} seller details.` : `Added seller ${seller.name}.`
+    )
+  }
+
+  async function deleteSeller(sellerId: string) {
+    if (!data) {
+      return
+    }
+
+    const seller = data.sellers[sellerId]
+    if (!seller) {
+      throw new Error('Seller not found.')
+    }
+
+    const hasTransactions = Object.values(data.sellerTransactions).some(
+      (transaction) => transaction.sellerId === sellerId
+    )
+    if (hasTransactions) {
+      throw new Error('Sellers with ledger history cannot be deleted.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), { [`sellers/${sellerId}`]: null })
+    await writeActivity('seller_deleted', 'sellers', `Deleted seller ${seller.name}.`)
+  }
+
+  async function recordSellerTransaction(input: SellerTransactionInput) {
+    if (!data) {
+      return
+    }
+
+    const seller = data.sellers[input.sellerId]
+    if (!seller) {
+      throw new Error('Seller not found.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const transactionId = createId('seller_txn')
+    const now = new Date().toISOString()
+
+    await update(ref(db, 'erp/sellerTransactions'), {
+      [transactionId]: {
+        id: transactionId,
+        sellerId: seller.id,
+        sellerName: seller.name,
+        date: input.date?.trim() || now,
+        itemsTaken: input.itemsTaken?.trim() ?? '',
+        takenValue: Math.max(input.takenValue ?? 0, 0),
+        cashGiven: Math.max(input.cashGiven ?? 0, 0),
+        goodsBroughtDescription: input.goodsBroughtDescription?.trim() ?? '',
+        iReceiveAmount: Math.max(input.iReceiveAmount ?? 0, 0),
+        theyReceiveAmount: Math.max(input.theyReceiveAmount ?? 0, 0),
+        createdAt: now,
+      },
+    })
+
+    await writeActivity('seller_transaction_recorded', 'sellers', `Recorded a ledger entry for ${seller.name}.`)
+  }
+
+  async function deleteSellerTransaction(transactionId: string) {
+    if (!data) {
+      return
+    }
+
+    const transaction = data.sellerTransactions[transactionId]
+    if (!transaction) {
+      throw new Error('Transaction not found.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), { [`sellerTransactions/${transactionId}`]: null })
+    await writeActivity(
+      'seller_transaction_deleted',
+      'sellers',
+      `Removed a ledger entry for ${transaction.sellerName}.`
+    )
+  }
+
+  async function saveCourier(input: CourierInput, courierId?: string) {
+    if (!data) {
+      return
+    }
+
+    const customerName = input.customerName.trim()
+    if (!customerName) {
+      throw new Error('Customer name is required.')
+    }
+
+    const courierName = input.courierName.trim()
+    if (!courierName) {
+      throw new Error('Courier name is required.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const existingCourier = courierId ? data.couriers[courierId] : null
+    const id = existingCourier?.id ?? createId('courier')
+    const now = new Date().toISOString()
+    const courier = {
+      id,
+      customerId: input.customerId ?? existingCourier?.customerId ?? '',
+      customerName,
+      billNumber: input.billNumber?.trim() || existingCourier?.billNumber || `SHP-${Date.now().toString().slice(-8)}`,
+      courierName,
+      productDescription: input.productDescription.trim(),
+      quantity: Math.max(input.quantity ?? 0, 0),
+      codAmount: Math.max(input.codAmount ?? 0, 0),
+      sentDate: input.sentDate?.trim() || existingCourier?.sentDate || now,
+      status: existingCourier?.status ?? 'in-transit',
+      createdAt: existingCourier?.createdAt ?? now,
+      updatedAt: now,
+    }
+
+    await update(ref(db, 'erp/couriers'), { [id]: courier })
+    await writeActivity(
+      existingCourier ? 'courier_updated' : 'courier_created',
+      'courier',
+      existingCourier
+        ? `Updated courier shipment for ${courier.customerName}.`
+        : `Sent ${courier.productDescription} to ${courier.customerName} via ${courier.courierName}.`
+    )
+  }
+
+  async function updateCourierStatus(courierId: string, status: CourierRecord['status']) {
+    if (!data) {
+      return
+    }
+
+    const courier = data.couriers[courierId]
+    if (!courier) {
+      return
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, `erp/couriers/${courierId}`), { status, updatedAt: new Date().toISOString() })
+    await writeActivity('courier_status_changed', 'courier', `Marked ${courier.customerName}'s shipment as ${status}.`)
+
+    if (status === 'delivered' || status === 'cod-collected') {
+      await writeNotification(
+        'Courier update',
+        `${courier.customerName}'s shipment (${courier.billNumber}) is now ${status.replace('-', ' ')}.`,
+        'info',
+        ['admin', 'sales_person', 'accountant']
+      )
+    }
+  }
+
+  async function deleteCourier(courierId: string) {
+    if (!data) {
+      return
+    }
+
+    const courier = data.couriers[courierId]
+    if (!courier) {
+      throw new Error('Courier record not found.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), { [`couriers/${courierId}`]: null })
+    await writeActivity('courier_deleted', 'courier', `Deleted courier shipment for ${courier.customerName}.`)
   }
 
   function switchUser(userId: string) {
@@ -936,8 +1351,9 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       logout,
       switchUser,
       createUser,
+      updateUser,
+      deleteUser,
       hasPermission: (permission) => hasPermissionCheck(data, currentUser, permission),
-      seedDemoData,
       saveProduct,
       deleteProduct,
       saveCustomer,
@@ -952,6 +1368,16 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       createTask,
       updateTaskStatus,
       markNotificationRead,
+      markAllNotificationsRead,
+      saveExpense,
+      deleteExpense,
+      saveSeller,
+      deleteSeller,
+      recordSellerTransaction,
+      deleteSellerTransaction,
+      saveCourier,
+      updateCourierStatus,
+      deleteCourier,
     }),
     [currentPermissions, currentUser, data, error, loading, users]
   )

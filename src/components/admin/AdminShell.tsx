@@ -2,16 +2,18 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { ReactNode, useMemo, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
   Boxes,
+  CheckCheck,
   FileSpreadsheet,
+  Handshake,
   LayoutDashboard,
+  Lock,
   LogOut,
   Menu,
-  Settings2,
-  RefreshCcw,
+  PackageCheck,
   ShieldCheck,
   ShoppingCart,
   Truck,
@@ -22,7 +24,11 @@ import {
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Sheet,
   SheetContent,
@@ -31,15 +37,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { LoginScreen } from '@/components/auth/LoginScreen'
 import { useERP } from '@/lib/erp/provider'
 import { cn } from '@/lib/utils'
+import { formatDateTime } from '@/lib/erp/utils'
 
 type NavigationItem = {
   label: string
@@ -84,7 +85,7 @@ const navigationGroups: NavigationGroup[] = [
         description: 'Purchase orders, LC tracking, and landed cost',
         href: '/admin/suppliers',
         icon: Truck,
-        permission: 'view_products',
+        permission: 'view_finance',
       },
       {
         label: 'Customers (CRM)',
@@ -92,6 +93,20 @@ const navigationGroups: NavigationGroup[] = [
         href: '/admin/customers',
         icon: Users,
         permission: 'view_reports',
+      },
+      {
+        label: 'Seller List',
+        description: 'Sub-dealer ledger: taken, given, receivable, payable',
+        href: '/admin/seller',
+        icon: Handshake,
+        permission: 'view_finance',
+      },
+      {
+        label: 'Courier Update',
+        description: 'Shipment status, COD amount, and bill tracking',
+        href: '/admin/courier',
+        icon: PackageCheck,
+        permission: 'manage_orders',
       },
       {
         label: 'Accounting & Finance',
@@ -113,25 +128,11 @@ const navigationGroups: NavigationGroup[] = [
     title: 'Administration',
     items: [
       {
-        label: 'Notifications',
-        description: 'Alert channels, thresholds, and recipients',
-        href: '/admin/notifications',
-        icon: Bell,
-        permission: 'view_dashboard',
-      },
-      {
         label: 'User & Role Management',
         description: 'Employee logins and permission matrix',
         href: '/admin/users',
         icon: ShieldCheck,
         permission: 'view_reports',
-      },
-      {
-        label: 'Settings',
-        description: 'Company profile, warehouses, and policy defaults',
-        href: '/admin/settings',
-        icon: Settings2,
-        permission: 'view_dashboard',
       },
     ],
   },
@@ -162,12 +163,10 @@ function SidebarContent({
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="space-y-4 border-b border-sidebar-border px-5 py-6">
         <Link href="/admin/dashboard" className="flex items-center gap-3" onClick={onNavigate}>
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sidebar-primary/10 ring-1 ring-sidebar-primary/15">
-            <Image src="/muaz-logo.svg" alt="IMS" width={34} height={34} className="h-8 w-8" />
-          </div>
+            <Image src="/muaz-logo.svg" alt="ERP" width={34} height={34} className="h-8 w-8" />
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.28em] text-sidebar-foreground/60">
-              IMS ERP
+            ERP
             </p>
             <h2 className="text-lg font-semibold">Muaz Technology</h2>
           </div>
@@ -233,9 +232,126 @@ function SidebarContent({
   )
 }
 
+function playNotificationSound() {
+  try {
+    const AudioContextClass = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new AudioContextClass()
+    const oscillator = ctx.createOscillator()
+    const gain = ctx.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.value = 880
+    gain.gain.setValueAtTime(0.2, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
+    oscillator.connect(gain)
+    gain.connect(ctx.destination)
+    oscillator.start()
+    oscillator.stop(ctx.currentTime + 0.3)
+    oscillator.onended = () => void ctx.close()
+  } catch {
+    // ignore autoplay/audio restrictions
+  }
+}
+
+function NotificationBell() {
+  const { data, currentUser, markNotificationRead, markAllNotificationsRead } = useERP()
+
+  const notifications = Object.values(data?.notifications ?? {})
+    .filter((notification) => {
+      if (!currentUser || currentUser.roleId === 'admin') return true
+      if (!notification.roles || notification.roles.length === 0) return true
+      return notification.roles.includes(currentUser.roleId)
+    })
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+
+  const unread = notifications.filter((notification) => !notification.read)
+  const unreadKey = unread.map((notification) => notification.id).sort().join(',')
+  const seenUnreadIds = useRef<Set<string> | null>(null)
+
+  useEffect(() => {
+    const currentUnreadIds = new Set(unread.map((notification) => notification.id))
+    if (seenUnreadIds.current) {
+      const hasNewNotification = [...currentUnreadIds].some((id) => !seenUnreadIds.current!.has(id))
+      if (hasNewNotification) playNotificationSound()
+    }
+    seenUnreadIds.current = currentUnreadIds
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unreadKey])
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="icon" className="relative rounded-full">
+          <Bell className="h-4 w-4" />
+          {unread.length > 0 ? (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+              {unread.length > 9 ? '9+' : unread.length}
+            </span>
+          ) : null}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80 p-0">
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <p className="text-sm font-semibold">Notifications</p>
+          {unread.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => void markAllNotificationsRead(unread.map((notification) => notification.id))}
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              Mark all read
+            </Button>
+          ) : null}
+        </div>
+        <div className="max-h-96 overflow-y-auto border-t border-border/60">
+          {notifications.length === 0 ? (
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">You&apos;re all caught up.</p>
+          ) : (
+            notifications.slice(0, 20).map((notification) => (
+              <button
+                key={notification.id}
+                type="button"
+                onClick={() => {
+                  if (!notification.read) void markNotificationRead(notification.id)
+                }}
+                className={cn(
+                  'flex w-full flex-col gap-1 border-b border-border/40 px-3 py-2.5 text-left text-sm last:border-b-0 hover:bg-accent/60',
+                  !notification.read && 'bg-accent/30'
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 font-medium">
+                    <span
+                      className={cn(
+                        'h-2 w-2 shrink-0 rounded-full',
+                        notification.level === 'critical'
+                          ? 'bg-rose-500'
+                          : notification.level === 'warning'
+                            ? 'bg-amber-500'
+                            : 'bg-sky-500'
+                      )}
+                    />
+                    {notification.title}
+                  </span>
+                  {!notification.read ? <span className="h-2 w-2 shrink-0 rounded-full bg-primary" /> : null}
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">{notification.body}</p>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                  {formatDateTime(notification.createdAt)}
+                </p>
+              </button>
+            ))
+          )}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 export function AdminShell({ active, children }: AdminShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { currentUser, data, seedDemoData, logout, markNotificationRead } = useERP()
+  const { currentUser, data, logout, hasPermission } = useERP()
 
   const allNavigationItems = navigationGroups.flatMap((group) => group.items)
 
@@ -243,22 +359,6 @@ export function AdminShell({ active, children }: AdminShellProps) {
     () => allNavigationItems.find((item) => item.label === active) ?? allNavigationItems[0],
     [active, allNavigationItems]
   )
-
-  const filteredNotifications = useMemo(() => {
-    const rawList = Object.values(data?.notifications ?? {})
-    const sorted = rawList.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    const roleId = currentUser?.roleId
-    if (!roleId) return []
-    return sorted.filter((item) => {
-      if (!item.roles || item.roles.length === 0) return true
-      if (roleId === 'admin') return true
-      return item.roles.includes(roleId)
-    })
-  }, [data?.notifications, currentUser?.roleId])
-
-  const unreadNotifications = useMemo(() => {
-    return filteredNotifications.filter((item) => !item.read).length
-  }, [filteredNotifications])
 
   const roleName = currentUser ? data?.roles[currentUser.roleId]?.name ?? currentUser.roleId : 'Loading'
 
@@ -310,111 +410,47 @@ export function AdminShell({ active, children }: AdminShellProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  <NotificationBell />
+
                   <ThemeToggle className="hidden sm:inline-flex" />
 
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="icon" className="relative rounded-full">
-                        <Bell className="h-4 w-4" />
-                        {unreadNotifications > 0 ? (
-                          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground animate-pulse">
-                            {unreadNotifications}
-                          </span>
-                        ) : null}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-80 p-0 rounded-2xl border-border/70 bg-popover text-popover-foreground shadow-xl">
-                      <div className="flex items-center justify-between border-b border-border/60 px-4 py-3 bg-muted/20">
-                        <p className="font-semibold text-sm">Notifications</p>
-                        {unreadNotifications > 0 ? (
-                          <Badge variant="destructive" className="rounded-full text-[10px] py-0 px-2 font-semibold">
-                            {unreadNotifications} unread
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <div className="max-h-80 overflow-y-auto p-2 space-y-1">
-                        {filteredNotifications.length === 0 ? (
-                          <p className="text-center py-6 text-xs text-muted-foreground">No notifications</p>
-                        ) : (
-                          filteredNotifications.slice(0, 10).map((notification) => (
-                            <DropdownMenuItem
-                              key={notification.id}
-                              className={cn(
-                                "flex flex-col items-start gap-1 p-2.5 rounded-xl transition-all cursor-pointer focus:bg-muted/60 focus:text-foreground",
-                                !notification.read ? "bg-primary/5 dark:bg-primary/10" : ""
-                              )}
-                              onClick={() => {
-                                if (!notification.read) {
-                                  void markNotificationRead(notification.id)
-                                }
-                              }}
-                            >
-                              <div className="flex w-full items-center justify-between gap-2">
-                                <span className={cn(
-                                  "font-semibold text-xs",
-                                  notification.level === 'critical' ? 'text-destructive' :
-                                  notification.level === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                                  'text-foreground'
-                                )}>
-                                  {notification.title}
-                                </span>
-                                {!notification.read && (
-                                  <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{notification.body}</p>
-                              <span className="text-[9px] text-muted-foreground/60 mt-1">
-                                {new Date(notification.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} · {new Date(notification.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            </DropdownMenuItem>
-                          ))
-                        )}
-                      </div>
-                      <div className="border-t border-border/60 p-2 text-center bg-muted/10">
-                        <Button asChild variant="ghost" className="w-full text-xs rounded-xl h-8">
-                          <Link href="/admin/reports">View all in reports</Link>
-                        </Button>
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="hidden text-right text-sm sm:block">
+                    <p className="font-medium text-foreground">{currentUser.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {currentUser.title} · {roleName}
+                    </p>
+                  </div>
 
-                  <Button variant="outline" size="sm" className="rounded-full" onClick={() => void seedDemoData()}>
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                    Reset demo data
-                  </Button>
                   <Button variant="outline" size="sm" className="rounded-full" onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     Logout
                   </Button>
                 </div>
               </div>
-
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                    Realtime sync active
-                  </span>
-                </div>
-
-                <div className="rounded-2xl border border-border/70 bg-card px-4 py-3 text-sm">
-                  <p className="font-medium text-foreground">{currentUser.name}</p>
-                  <p className="text-muted-foreground">
-                    {currentUser.title} · {roleName}
-                  </p>
-                </div>
-              </div>
             </div>
           </header>
 
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-            <div className="mx-auto w-full max-w-7xl">{children}</div>
+            <div className="mx-auto w-full max-w-7xl">
+              {hasPermission(currentPage.permission) ? (
+                children
+              ) : (
+                <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-border/70 bg-card/50 p-10 text-center">
+                  <Lock className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-lg font-semibold">Access restricted</p>
+                  <p className="max-w-md text-sm text-muted-foreground">
+                    Your role ({roleName}) doesn&apos;t have permission to view {currentPage.label}. Contact an
+                    administrator if you need access.
+                  </p>
+                </div>
+              )}
+            </div>
           </main>
 
           <footer className="border-t border-border/60 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
             <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p>{data?.settings.companyName ?? 'IMS'} · {data?.settings.timezone ?? 'Asia/Dhaka'}</p>
+              <p>{data?.settings.companyName ?? 'ERP'} · {data?.settings.timezone ?? 'Asia/Dhaka'}</p>
             </div>
           </footer>
         </div>

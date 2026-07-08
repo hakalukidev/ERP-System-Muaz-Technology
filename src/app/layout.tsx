@@ -4,8 +4,13 @@ import { ERPProvider } from '@/lib/erp/provider'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'IMS - Inventory Management System',
+  title: 'ERP - Inventory Management System',
   description: 'Inventory Management System',
+  icons: {
+    icon: '/muaz_icon.png',
+    shortcut: '/muaz_icon.png',
+    apple: '/muaz_icon.png',
+  },
 }
 
 export default function RootLayout({

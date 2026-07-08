@@ -59,6 +59,7 @@ export type CustomerRecord = {
   due: number
   supportStatus: 'none' | 'needed' | 'in-progress' | 'resolved'
   supportNote: string
+  isPremium: boolean
   createdAt: string
   updatedAt: string
 }
@@ -71,6 +72,8 @@ export type ProductRecord = {
   category: string
   brand: string
   sku: string
+  serialNumber?: string
+  warrantyMonths?: number
   warehouseId: string
   supplierId: string
   purchasePrice: number
@@ -100,6 +103,7 @@ export type OrderItem = {
 
 export type OrderRecord = {
   id: string
+  billNumber: string
   customerId: string
   customerName: string
   salesPersonId: string
@@ -110,6 +114,9 @@ export type OrderRecord = {
   paid: number
   due: number
   deliveryDate: string
+  paymentDueDate: string
+  dueReference: 'owner' | 'courier' | ''
+  overdueNotified?: boolean
   createdAt: string
   items: OrderItem[]
 }
@@ -171,6 +178,58 @@ export type SettingsRecord = {
   timezone: string
 }
 
+export type ExpenseRecord = {
+  id: string
+  category: string
+  amount: number
+  note: string
+  date: string
+  createdBy: string
+  createdByName: string
+  createdAt: string
+}
+
+export type SellerRecord = {
+  id: string
+  name: string
+  phone: string
+  location: string
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type SellerTransactionRecord = {
+  id: string
+  sellerId: string
+  sellerName: string
+  date: string
+  itemsTaken: string
+  takenValue: number
+  cashGiven: number
+  goodsBroughtDescription: string
+  iReceiveAmount: number
+  theyReceiveAmount: number
+  createdAt: string
+}
+
+export type CourierStatus = 'in-transit' | 'delivered' | 'returned' | 'cod-collected'
+
+export type CourierRecord = {
+  id: string
+  customerId?: string
+  customerName: string
+  billNumber: string
+  courierName: string
+  productDescription: string
+  quantity: number
+  codAmount: number
+  sentDate: string
+  status: CourierStatus
+  createdAt: string
+  updatedAt: string
+}
+
 export type ERPData = {
   permissions: Record<string, PermissionDefinition>
   roles: Record<string, RoleRecord>
@@ -184,6 +243,10 @@ export type ERPData = {
   tasks: Record<string, TaskRecord>
   notifications: Record<string, NotificationRecord>
   activities: Record<string, ActivityRecord>
+  expenses: Record<string, ExpenseRecord>
+  sellers: Record<string, SellerRecord>
+  sellerTransactions: Record<string, SellerTransactionRecord>
+  couriers: Record<string, CourierRecord>
   settings: SettingsRecord
   meta: {
     seededAt: string
@@ -196,6 +259,8 @@ export type ProductInput = {
   category?: string
   brand?: string
   sku: string
+  serialNumber?: string
+  warrantyMonths?: number
   warehouseId: string
   supplierId?: string
   purchasePrice: number
@@ -203,7 +268,7 @@ export type ProductInput = {
   wholesalePrice?: number
   stockQty: number
   minStock: number
-  maxStock: number
+  maxStock?: number
   description?: string
   imageUrl?: string
   imagePublicId?: string
@@ -222,6 +287,7 @@ export type CustomerInput = {
   due?: number
   supportStatus?: CustomerRecord['supportStatus']
   supportNote?: string
+  isPremium?: boolean
 }
 
 export type SupplierInput = {
@@ -256,6 +322,46 @@ export type OrderInput = {
   quantity: number
   paid: number
   deliveryDate: string
+  billNumber?: string
+  orderDate?: string
+  paymentDueDate?: string
+  dueReference?: OrderRecord['dueReference']
+}
+
+export type ExpenseInput = {
+  category: string
+  amount: number
+  note?: string
+  date?: string
+}
+
+export type SellerInput = {
+  name: string
+  phone: string
+  location?: string
+  notes?: string
+}
+
+export type SellerTransactionInput = {
+  sellerId: string
+  date?: string
+  itemsTaken?: string
+  takenValue?: number
+  cashGiven?: number
+  goodsBroughtDescription?: string
+  iReceiveAmount?: number
+  theyReceiveAmount?: number
+}
+
+export type CourierInput = {
+  customerId?: string
+  customerName: string
+  billNumber?: string
+  courierName: string
+  productDescription: string
+  quantity: number
+  codAmount: number
+  sentDate?: string
 }
 
 export type TaskInput = {

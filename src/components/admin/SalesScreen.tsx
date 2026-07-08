@@ -1,32 +1,61 @@
 "use client"
 
 import { useMemo, useState, type FormEvent } from 'react'
-import { CalendarClock, ClipboardPlus, FileDown, Printer, ReceiptText } from 'lucide-react'
+import {
+  CalendarClock,
+  ClipboardPlus,
+  FileDown,
+  FileSpreadsheet,
+  Plus,
+  Printer,
+  ReceiptText,
+  Search,
+} from 'lucide-react'
 
 import { AdminShell } from './AdminShell'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useERP } from '@/lib/erp/provider'
 import type { OrderRecord } from '@/lib/erp/types'
-import { formatCurrency, formatDate, getReadableOrderState, toArray } from '@/lib/erp/utils'
+import { cn } from '@/lib/utils'
+import { exportXlsx, formatCurrency, formatDate, getReadableOrderState, toArray } from '@/lib/erp/utils'
+
+function defaultPaymentDueDate() {
+  const date = new Date()
+  date.setDate(date.getDate() + 15)
+  return date.toISOString().slice(0, 10)
+}
 
 const emptyOrder = {
   customerId: '',
   productId: '',
   quantity: '1',
   paid: '0',
+  billNumber: '',
+  orderDate: new Date().toISOString().slice(0, 10),
   deliveryDate: '',
+  paymentDueDate: defaultPaymentDueDate(),
+  dueReference: 'owner' as OrderRecord['dueReference'],
 }
 
 type SalesDocument = Pick<
   OrderRecord,
   'id' | 'customerId' | 'customerName' | 'salesPersonName' | 'total' | 'paid' | 'due' | 'deliveryDate' | 'createdAt' | 'items'
 >
+
+type PaymentFilter = 'all' | 'paid' | 'partial' | 'unpaid'
 
 function escapeHtml(value: string) {
   return value
@@ -37,6 +66,12 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#039;')
 }
 
+function paymentStatusOf(order: OrderRecord): PaymentFilter {
+  if (order.due <= 0) return 'paid'
+  if (order.paid > 0) return 'partial'
+  return 'unpaid'
+}
+
 export function SalesScreen() {
   const { data, hasPermission, createOrder, updateOrderStatus } = useERP()
   const orders = useMemo(
@@ -45,12 +80,30 @@ export function SalesScreen() {
   )
   const customers = useMemo(() => toArray(data?.customers), [data?.customers])
   const products = useMemo(() => toArray(data?.products), [data?.products])
+  const salesPeople = useMemo(() => {
+    const map = new Map<string, string>()
+    orders.forEach((order) => {
+      if (order.salesPersonId) {
+        map.set(order.salesPersonId, order.salesPersonName)
+      }
+    })
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+  }, [orders])
+
   const [orderForm, setOrderForm] = useState(emptyOrder)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [newSaleOpen, setNewSaleOpen] = useState(false)
+
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<OrderRecord['status'] | 'all'>('all')
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all')
+  const [salesPersonFilter, setSalesPersonFilter] = useState<string>('all')
+  const [dueOnly, setDueOnly] = useState(false)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
 
   const openOrders = orders.filter((order) => order.status !== 'completed').length
   const readyOrders = orders.filter((order) => order.status === 'ready').length
-  const dueOrders = orders.filter((order) => order.due > 0).length
   const receivableTotal = orders.reduce((sum, order) => sum + order.due, 0)
   const supplierPayableEstimate = toArray(data?.purchases).reduce((sum, purchase) => sum + purchase.total, 0)
   const overdueOrders = orders.filter((order) => {
@@ -64,6 +117,32 @@ export function SalesScreen() {
 
     return deliveryDate < today
   })
+
+  const filteredOrders = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    const from = fromDate ? new Date(fromDate) : null
+    const to = toDate ? new Date(toDate) : null
+    if (to) to.setHours(23, 59, 59, 999)
+
+    return orders.filter((order) => {
+      const matchesSearch =
+        !normalizedQuery ||
+        [order.billNumber, order.customerName, order.salesPersonName, ...order.items.map((item) => item.productName)]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedQuery)
+      const matchesStatus = statusFilter === 'all' || order.status === statusFilter
+      const matchesPayment = paymentFilter === 'all' || paymentStatusOf(order) === paymentFilter
+      const matchesSalesPerson = salesPersonFilter === 'all' || order.salesPersonId === salesPersonFilter
+      const matchesDue = !dueOnly || order.due > 0
+      const orderDate = new Date(order.createdAt)
+      const matchesFrom = !from || orderDate >= from
+      const matchesTo = !to || orderDate <= to
+
+      return matchesSearch && matchesStatus && matchesPayment && matchesSalesPerson && matchesDue && matchesFrom && matchesTo
+    })
+  }, [orders, query, statusFilter, paymentFilter, salesPersonFilter, dueOnly, fromDate, toDate])
+
   const dueReminderRows = orders
     .filter((order) => order.due > 0)
     .sort((left, right) => left.deliveryDate.localeCompare(right.deliveryDate))
@@ -79,10 +158,15 @@ export function SalesScreen() {
         productId: orderForm.productId,
         quantity: Number(orderForm.quantity),
         paid: Number(orderForm.paid),
+        billNumber: orderForm.billNumber,
+        orderDate: orderForm.orderDate,
         deliveryDate: orderForm.deliveryDate,
+        paymentDueDate: orderForm.paymentDueDate,
+        dueReference: orderForm.dueReference,
       })
-      setOrderForm(emptyOrder)
+      setOrderForm({ ...emptyOrder, orderDate: new Date().toISOString().slice(0, 10), paymentDueDate: defaultPaymentDueDate() })
       setFeedback('Sales order created and inventory updated in realtime.')
+      setNewSaleOpen(false)
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : 'Unable to create order.')
     }
@@ -145,7 +229,7 @@ export function SalesScreen() {
         <body>
           <div class="header">
             <div class="brand">
-              <h1>${escapeHtml(data?.settings.companyName ?? 'IMS ERP')}</h1>
+              <h1>${escapeHtml(data?.settings.companyName ?? 'ERP')}</h1>
               <p>Sales & Billing</p>
             </div>
             <div class="meta">
@@ -250,36 +334,42 @@ export function SalesScreen() {
     })
   }
 
+  function resetFilters() {
+    setQuery('')
+    setStatusFilter('all')
+    setPaymentFilter('all')
+    setSalesPersonFilter('all')
+    setDueOnly(false)
+    setFromDate('')
+    setToDate('')
+  }
+
+  function handleExport() {
+    const currency = data?.settings.currency
+    const rows = filteredOrders.map((order) => [
+      order.billNumber,
+      order.customerName,
+      order.salesPersonName,
+      order.items.map((item) => `${item.productName} x${item.quantity}`).join('; '),
+      formatCurrency(order.total, currency),
+      formatCurrency(order.paid, currency),
+      formatCurrency(order.due, currency),
+      getReadableOrderState(order),
+      formatDate(order.deliveryDate),
+      formatDate(order.createdAt),
+    ])
+
+    void exportXlsx(
+      `ims-sales-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      'Sales',
+      ['Bill', 'Customer', 'Sales Person', 'Items', 'Total', 'Paid', 'Due', 'Status', 'Delivery', 'Created'],
+      rows
+    )
+  }
+
   return (
     <AdminShell active="Sales & Billing">
       <div className="space-y-6">
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader>
-            <CardTitle>Sales & billing scope</CardTitle>
-            <CardDescription>The sidebar now groups the full billing workflow, not only order entry.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {[
-              ['New sale / POS entry', 'Create new sales orders from the live inventory set.', 'Ready'],
-              ['Quotations', 'Create printable quotations from the order form before saving stock movement.', 'Ready'],
-              ['Invoices', 'Print invoices and use Save as PDF from the browser print dialog.', 'Ready'],
-              ['Sales history', 'Review the full order trail and fulfillment states.', 'Ready'],
-              ['Due / credit tracking', 'Follow receivable dues, supplier payable estimates, and due reminders.', 'Ready'],
-              ['Returns & refunds', 'Link a return request to the original invoice.', 'Planned'],
-            ].map(([title, description, status]) => (
-              <div key={title} className="rounded-2xl border border-border/70 bg-muted/30 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{title}</p>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-                  </div>
-                  <Badge variant="outline">{status}</Badge>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
         {feedback ? (
           <Card className="border-border/70 bg-primary/5 shadow-sm">
             <CardContent className="p-4 text-sm text-primary">{feedback}</CardContent>
@@ -317,175 +407,163 @@ export function SalesScreen() {
           </Card>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1fr_1.2fr]">
-          <Card className="border-border/70 shadow-sm">
-            <CardHeader>
-              <CardTitle>Create sales order</CardTitle>
-              <CardDescription>Available to roles that can manage orders.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {hasPermission('manage_orders') ? (
-                <form className="space-y-4" onSubmit={handleOrderSubmit}>
-                  <Select value={orderForm.customerId} onValueChange={(value) => setOrderForm((current) => ({ ...current, customerId: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.name} · due {formatCurrency(customer.due, data?.settings.currency)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={orderForm.productId} onValueChange={(value) => setOrderForm((current) => ({ ...current, productId: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products.map((product) => (
-                        <SelectItem key={product.id} value={product.id}>
-                          {product.name} · stock {product.stockQty}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <Input type="number" min="1" value={orderForm.quantity} onChange={(event) => setOrderForm((current) => ({ ...current, quantity: event.target.value }))} required />
-                    <Input type="number" min="0" value={orderForm.paid} onChange={(event) => setOrderForm((current) => ({ ...current, paid: event.target.value }))} required />
-                    <Input type="date" value={orderForm.deliveryDate} onChange={(event) => setOrderForm((current) => ({ ...current, deliveryDate: event.target.value }))} required />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Button type="button" variant="outline" className="rounded-xl" onClick={handleQuotationPrint}>
-                      <Printer className="mr-2 h-4 w-4" />
-                      Print quotation
-                    </Button>
-                    <Button type="submit" className="rounded-xl">
-                      <ClipboardPlus className="mr-2 h-4 w-4" />
-                      Save order
-                    </Button>
-                  </div>
-                </form>
-              ) : (
-                <p className="text-sm text-muted-foreground">Your current role cannot create orders.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70 shadow-sm">
-            <CardHeader>
-              <CardTitle>Order board</CardTitle>
-              <CardDescription>Update fulfillment, print invoices, and download PDFs from the live sales list.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto rounded-2xl border border-border/70">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Product</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Due</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Delivery</TableHead>
-                      <TableHead className="text-right">Invoice</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {orders.map((order) => (
-                      <TableRow key={order.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-semibold">{order.customerName}</p>
-                            <p className="text-sm text-muted-foreground">{order.salesPersonName}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>{order.items[0]?.productName ?? 'N/A'}</TableCell>
-                        <TableCell>{formatCurrency(order.total, data?.settings.currency)}</TableCell>
-                        <TableCell>{formatCurrency(order.due, data?.settings.currency)}</TableCell>
-                        <TableCell>
-                          {hasPermission('manage_orders') ? (
-                            <Select value={order.status} onValueChange={(value) => void updateOrderStatus(order.id, value as typeof order.status)}>
-                              <SelectTrigger className="w-40">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="pending">Pending</SelectItem>
-                                <SelectItem value="ready">Ready</SelectItem>
-                                <SelectItem value="shipped">Shipped</SelectItem>
-                                <SelectItem value="completed">Completed</SelectItem>
-                                <SelectItem value="hold">Hold</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Badge variant="outline">{getReadableOrderState(order)}</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{formatDate(order.deliveryDate)}</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-2">
-                            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printSalesDocument('Invoice', order)} aria-label={`Print invoice ${order.id}`}>
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printSalesDocument('Invoice', order)} aria-label={`Download invoice ${order.id} as PDF`}>
-                              <FileDown className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
         <Card className="border-border/70 shadow-sm">
-          <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <CardTitle>Due reminders</CardTitle>
-              <CardDescription>Customers with unpaid or partial-payment invoices, sorted by due date.</CardDescription>
+              <CardTitle>Sales & billing data table</CardTitle>
+              <CardDescription>Filter the full order trail, export data, or start a new sale.</CardDescription>
             </div>
-            <Badge variant="outline" className="rounded-full">
-              <CalendarClock className="mr-1 h-3.5 w-3.5" />
-              {overdueOrders.length} overdue
-            </Badge>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" className="rounded-xl" onClick={handleExport}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Export data
+              </Button>
+              {hasPermission('manage_orders') ? (
+                <Button className="rounded-xl" onClick={() => setNewSaleOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New sale
+                </Button>
+              ) : null}
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <div className="relative xl:col-span-2">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="pl-9"
+                  placeholder="Search bill, customer, product, sales person"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="ready">Ready</SelectItem>
+                  <SelectItem value="shipped">Shipped</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="hold">Hold</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={paymentFilter} onValueChange={(value) => setPaymentFilter(value as PaymentFilter)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Payment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All payments</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  <SelectItem value="partial">Partial</SelectItem>
+                  <SelectItem value="unpaid">Unpaid</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={salesPersonFilter} onValueChange={setSalesPersonFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sales person" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sales history</SelectItem>
+                  {salesPeople.map((person) => (
+                    <SelectItem key={person.id} value={person.id}>
+                      {person.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant={dueOnly ? 'default' : 'outline'}
+                className="h-10 rounded-xl"
+                onClick={() => setDueOnly((current) => !current)}
+              >
+                Due only
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">From date</p>
+                <Input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">To date</p>
+                <Input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
+              </div>
+              <div className="flex items-end">
+                <Button variant="ghost" className="h-10 rounded-xl" onClick={resetFilters}>
+                  Clear filters
+                </Button>
+              </div>
+            </div>
+
             <div className="overflow-x-auto rounded-2xl border border-border/70">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead>Bill</TableHead>
                     <TableHead>Customer</TableHead>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Due date</TableHead>
-                    <TableHead>Due amount</TableHead>
-                    <TableHead className="text-right">Reminder</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Sales person</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Due</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Delivery</TableHead>
+                    <TableHead className="text-right">Invoice</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dueReminderRows.map((order) => (
-                    <TableRow key={order.id}>
+                  {filteredOrders.map((order) => (
+                    <TableRow key={order.id} className={cn(order.due > 0 ? 'bg-rose-500/5 dark:bg-rose-500/10' : '')}>
+                      <TableCell className="font-medium">{order.billNumber}</TableCell>
                       <TableCell>
                         <p className="font-semibold">{order.customerName}</p>
-                        <p className="text-sm text-muted-foreground">{order.items[0]?.productName ?? 'N/A'}</p>
                       </TableCell>
-                      <TableCell>{order.id}</TableCell>
+                      <TableCell>{order.items[0]?.productName ?? 'N/A'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{order.salesPersonName}</TableCell>
+                      <TableCell>{formatCurrency(order.total, data?.settings.currency)}</TableCell>
+                      <TableCell className={cn(order.due > 0 ? 'font-semibold text-rose-600 dark:text-rose-400' : '')}>
+                        {formatCurrency(order.due, data?.settings.currency)}
+                        {order.due > 0 && order.dueReference ? (
+                          <p className="text-xs font-normal text-muted-foreground">Held by: {order.dueReference}</p>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        {hasPermission('manage_orders') ? (
+                          <Select value={order.status} onValueChange={(value) => void updateOrderStatus(order.id, value as typeof order.status)}>
+                            <SelectTrigger className="w-40">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="ready">Ready</SelectItem>
+                              <SelectItem value="shipped">Shipped</SelectItem>
+                              <SelectItem value="completed">Completed</SelectItem>
+                              <SelectItem value="hold">Hold</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant="outline">{getReadableOrderState(order)}</Badge>
+                        )}
+                      </TableCell>
                       <TableCell>{formatDate(order.deliveryDate)}</TableCell>
-                      <TableCell>{formatCurrency(order.due, data?.settings.currency)}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="outline" size="sm" className="rounded-xl" onClick={() => printSalesDocument('Invoice', order)}>
-                          <ReceiptText className="mr-2 h-4 w-4" />
-                          Invoice
-                        </Button>
+                      <TableCell>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printSalesDocument('Invoice', order)} aria-label={`Print invoice ${order.id}`}>
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printSalesDocument('Invoice', order)} aria-label={`Download invoice ${order.id} as PDF`}>
+                            <FileDown className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
-                  {dueReminderRows.length === 0 ? (
+                  {filteredOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                        No due reminders.
+                      <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
+                        No sales orders match the current filters.
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -494,7 +572,151 @@ export function SalesScreen() {
             </div>
           </CardContent>
         </Card>
+
+       
       </div>
+
+      <Dialog open={newSaleOpen} onOpenChange={setNewSaleOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create new sale</DialogTitle>
+            <DialogDescription>Save a sales order from the live inventory set, or print a quotation first.</DialogDescription>
+          </DialogHeader>
+          <form className="space-y-5" onSubmit={handleOrderSubmit}>
+            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Order details</p>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Customer<span className="ml-0.5 text-rose-500">*</span>
+                </p>
+                <Select value={orderForm.customerId} onValueChange={(value) => setOrderForm((current) => ({ ...current, customerId: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers.map((customer) => (
+                      <SelectItem key={customer.id} value={customer.id}>
+                        {customer.name} · due {formatCurrency(customer.due, data?.settings.currency)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Product<span className="ml-0.5 text-rose-500">*</span>
+                </p>
+                <Select value={orderForm.productId} onValueChange={(value) => setOrderForm((current) => ({ ...current, productId: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a product" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {products.map((product) => (
+                      <SelectItem key={product.id} value={product.id}>
+                        {product.name} · stock {product.stockQty}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Quantity<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input type="number" min="1" value={orderForm.quantity} onChange={(event) => setOrderForm((current) => ({ ...current, quantity: event.target.value }))} required />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Delivery date<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input type="date" value={orderForm.deliveryDate} onChange={(event) => setOrderForm((current) => ({ ...current, deliveryDate: event.target.value }))} required />
+                </div>
+              </div>
+              {orderForm.productId ? (
+                (() => {
+                  const selectedProduct = products.find((product) => product.id === orderForm.productId)
+                  const quantity = Number(orderForm.quantity || 0)
+                  const total = (selectedProduct?.sellingPrice ?? 0) * quantity
+                  const paid = Number(orderForm.paid || 0)
+                  const due = Math.max(total - paid, 0)
+
+                  return (
+                    <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Order total</p>
+                          <p className="mt-1 text-lg font-semibold">{formatCurrency(total, data?.settings.currency)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Paid</p>
+                          <p className="mt-1 text-lg font-semibold">{formatCurrency(paid, data?.settings.currency)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Due</p>
+                          <p className="mt-1 text-lg font-semibold">{formatCurrency(due, data?.settings.currency)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()
+              ) : null}
+            </div>
+
+            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Payment</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Paid now ({data?.settings.currency ?? 'BDT'})<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input type="number" min="0" value={orderForm.paid} onChange={(event) => setOrderForm((current) => ({ ...current, paid: event.target.value }))} placeholder="0" required />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Bill / sale date<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input type="date" value={orderForm.orderDate} onChange={(event) => setOrderForm((current) => ({ ...current, orderDate: event.target.value }))} required />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Payment due date <span className="font-normal text-muted-foreground">(optional)</span>
+                  </p>
+                  <Input type="date" value={orderForm.paymentDueDate} onChange={(event) => setOrderForm((current) => ({ ...current, paymentDueDate: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Who collects the due amount</p>
+                  <Select value={orderForm.dueReference || 'owner'} onValueChange={(value) => setOrderForm((current) => ({ ...current, dueReference: value as OrderRecord['dueReference'] }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="owner">Owner (collected directly)</SelectItem>
+                      <SelectItem value="courier">Courier (COD on delivery)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Bill number <span className="font-normal text-muted-foreground">(optional — auto-generated if left blank)</span>
+                  </p>
+                  <Input value={orderForm.billNumber} onChange={(event) => setOrderForm((current) => ({ ...current, billNumber: event.target.value }))} placeholder="Auto-generated if blank" />
+                </div>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Button type="button" variant="outline" className="rounded-xl" onClick={handleQuotationPrint}>
+                <Printer className="mr-2 h-4 w-4" />
+                Print quotation
+              </Button>
+              <Button type="submit" className="rounded-xl">
+                <ClipboardPlus className="mr-2 h-4 w-4" />
+                Save order
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AdminShell>
   )
 }

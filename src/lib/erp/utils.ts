@@ -132,12 +132,11 @@ export function buildDashboardSnapshot(data: ERPData | null, roleId?: string) {
     date.setMonth(date.getMonth() - (5 - index))
     const key = `${date.getFullYear()}-${date.getMonth()}`
     const label = date.toLocaleDateString('en-BD', { month: 'short' })
-    const revenue = orders
-      .filter((order) => {
-        const orderDate = new Date(order.createdAt)
-        return `${orderDate.getFullYear()}-${orderDate.getMonth()}` === key
-      })
-      .reduce((sum, order) => sum + order.total, 0)
+    const monthOrders = orders.filter((order) => {
+      const orderDate = new Date(order.createdAt)
+      return `${orderDate.getFullYear()}-${orderDate.getMonth()}` === key
+    })
+    const revenue = monthOrders.reduce((sum, order) => sum + order.total, 0)
     const expense = purchases
       .filter((purchase) => {
         const purchaseDate = new Date(purchase.createdAt)
@@ -149,6 +148,7 @@ export function buildDashboardSnapshot(data: ERPData | null, roleId?: string) {
       month: label,
       revenue,
       expense,
+      orders: monthOrders.length,
     }
   })
 
@@ -171,6 +171,110 @@ export function buildDashboardSnapshot(data: ERPData | null, roleId?: string) {
     activities,
     monthlyRevenue,
   }
+}
+
+export const REVENUE_RANGE_OPTIONS = [
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: '3m', label: 'Last 3 months' },
+  { value: '6m', label: 'Last 6 months' },
+  { value: '12m', label: 'Last 12 months' },
+] as const
+
+export type RevenueRange = (typeof REVENUE_RANGE_OPTIONS)[number]['value']
+
+export function revenueRangeStartDate(range: RevenueRange) {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+
+  if (range === '7d') date.setDate(date.getDate() - 6)
+  else if (range === '30d') date.setDate(date.getDate() - 29)
+  else if (range === '3m') date.setMonth(date.getMonth() - 3)
+  else if (range === '12m') date.setMonth(date.getMonth() - 12)
+  else date.setMonth(date.getMonth() - 6)
+
+  return date
+}
+
+export function buildCategoryRevenue(data: ERPData | null, range: RevenueRange) {
+  const orders = toArray(data?.orders)
+  const products = toArray(data?.products)
+  const categoryByProductId = new Map(products.map((product) => [product.id, product.category || 'Uncategorized']))
+  const start = revenueRangeStartDate(range)
+
+  const totals = orders
+    .filter((order) => new Date(order.createdAt) >= start)
+    .reduce<Record<string, number>>((result, order) => {
+      order.items.forEach((item) => {
+        const category = categoryByProductId.get(item.productId) ?? 'Uncategorized'
+        result[category] = (result[category] ?? 0) + item.unitPrice * item.quantity
+      })
+      return result
+    }, {})
+
+  return Object.entries(totals)
+    .map(([category, revenue]) => ({ category, revenue }))
+    .sort((left, right) => right.revenue - left.revenue)
+    .slice(0, 8)
+}
+
+export function buildPaymentStatusCounts(data: ERPData | null) {
+  const orders = toArray(data?.orders)
+
+  return orders.reduce<Record<string, number>>((result, order) => {
+    result[order.paymentStatus] = (result[order.paymentStatus] ?? 0) + 1
+    return result
+  }, {})
+}
+
+export function buildRevenueSeries(data: ERPData | null, range: RevenueRange) {
+  const orders = toArray(data?.orders)
+  const purchases = toArray(data?.purchases)
+
+  if (range === '7d' || range === '30d') {
+    const days = range === '7d' ? 7 : 30
+    return Array.from({ length: days }).map((_, index) => {
+      const date = new Date()
+      date.setHours(0, 0, 0, 0)
+      date.setDate(date.getDate() - (days - 1 - index))
+      const key = date.toDateString()
+      const label = date.toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })
+
+      const dayOrders = orders.filter((order) => new Date(order.createdAt).toDateString() === key)
+      const dayPurchases = purchases.filter((purchase) => new Date(purchase.createdAt).toDateString() === key)
+
+      return {
+        month: label,
+        revenue: dayOrders.reduce((sum, order) => sum + order.total, 0),
+        expense: dayPurchases.reduce((sum, purchase) => sum + purchase.total, 0),
+        orders: dayOrders.length,
+      }
+    })
+  }
+
+  const months = range === '3m' ? 3 : range === '12m' ? 12 : 6
+  return Array.from({ length: months }).map((_, index) => {
+    const date = new Date()
+    date.setMonth(date.getMonth() - (months - 1 - index))
+    const key = `${date.getFullYear()}-${date.getMonth()}`
+    const label = date.toLocaleDateString('en-BD', { month: 'short', year: months > 6 ? '2-digit' : undefined })
+
+    const monthOrders = orders.filter((order) => {
+      const orderDate = new Date(order.createdAt)
+      return `${orderDate.getFullYear()}-${orderDate.getMonth()}` === key
+    })
+    const monthPurchases = purchases.filter((purchase) => {
+      const purchaseDate = new Date(purchase.createdAt)
+      return `${purchaseDate.getFullYear()}-${purchaseDate.getMonth()}` === key
+    })
+
+    return {
+      month: label,
+      revenue: monthOrders.reduce((sum, order) => sum + order.total, 0),
+      expense: monthPurchases.reduce((sum, purchase) => sum + purchase.total, 0),
+      orders: monthOrders.length,
+    }
+  })
 }
 
 export function buildUserReport(data: ERPData | null) {
@@ -210,6 +314,47 @@ function escapeCsv(value: string) {
   }
 
   return value
+}
+
+export const PREMIUM_CUSTOMER_THRESHOLD = 200000
+
+export function computeCustomerTotals(data: ERPData | null) {
+  const orders = toArray(data?.orders)
+
+  return orders.reduce<Record<string, number>>((totals, order) => {
+    totals[order.customerId] = (totals[order.customerId] ?? 0) + order.total
+    return totals
+  }, {})
+}
+
+export function isPremiumCustomer(totalSpend: number, threshold = PREMIUM_CUSTOMER_THRESHOLD) {
+  return totalSpend >= threshold
+}
+
+export async function exportXlsx(filename: string, sheetName: string, headers: string[], rows: (string | number)[][]) {
+  const XLSX = await import('xlsx')
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows])
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
+  XLSX.writeFile(workbook, filename)
+}
+
+export async function exportPdf(filename: string, title: string, headers: string[], rows: (string | number)[][]) {
+  const { default: JsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+  const doc = new JsPDF({ orientation: rows.length && headers.length > 6 ? 'landscape' : 'portrait' })
+
+  doc.setFontSize(14)
+  doc.text(title, 14, 16)
+  autoTable(doc, {
+    head: [headers],
+    body: rows.map((row) => row.map((value) => String(value))),
+    startY: 22,
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [30, 41, 59] },
+  })
+
+  doc.save(filename)
 }
 
 export function notificationToneClass(notification: NotificationRecord) {

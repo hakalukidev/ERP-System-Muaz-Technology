@@ -79,6 +79,9 @@ const lcStatusLabels: Record<SupplierRecord['lcStatus'], string> = {
   closed: 'Closed',
 }
 
+const currencyOptions = ['BDT', 'USD', 'CNY', 'EUR']
+const commonCountries = ['Bangladesh', 'China', 'India', 'United States', 'United Arab Emirates']
+
 function getLandedCost(supplier: SupplierRecord) {
   return supplier.productCost + supplier.shippingCost + supplier.customsDuty + supplier.otherCost
 }
@@ -201,6 +204,11 @@ export default function SuppliersPage() {
       ),
     }
   }, [suppliers])
+
+  const countryOptions = useMemo(
+    () => Array.from(new Set([...commonCountries, ...suppliers.map((supplier) => supplier.country)].filter(Boolean))),
+    [suppliers]
+  )
 
   const previewLandedCost =
     Number(supplierForm.productCost || 0) +
@@ -476,50 +484,154 @@ export default function SuppliersPage() {
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingSupplier ? 'Edit supplier' : 'Add new supplier'}</DialogTitle>
-            <DialogDescription>Save supplier/importer details, LC tracking, and landed cost inputs.</DialogDescription>
+            <DialogDescription>
+              {editingSupplier
+                ? 'Update supplier/importer details, LC tracking, and cost estimates.'
+                : 'Just the contact and trade type — LC tracking and cost estimates are optional and can be refined later.'}
+            </DialogDescription>
           </DialogHeader>
           <form className="space-y-5" onSubmit={handleSubmit}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Input value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} placeholder="Supplier name" required />
-              <Input value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone number" required />
-              <Input value={supplierForm.company} onChange={(event) => setSupplierForm((current) => ({ ...current, company: event.target.value }))} placeholder="Company name" />
-              <Input value={supplierForm.email} onChange={(event) => setSupplierForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" />
-              <Input value={supplierForm.location} onChange={(event) => setSupplierForm((current) => ({ ...current, location: event.target.value }))} placeholder="Location" />
-              <Input value={supplierForm.country} onChange={(event) => setSupplierForm((current) => ({ ...current, country: event.target.value }))} placeholder="Country" />
-              <Select value={supplierForm.supplierType} onValueChange={(value) => setSupplierForm((current) => ({ ...current, supplierType: value as SupplierRecord['supplierType'] }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="local">Local supplier</SelectItem>
-                  <SelectItem value="foreign">Foreign supplier</SelectItem>
-                  <SelectItem value="importer">Importer</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={supplierForm.lcStatus} onValueChange={(value) => setSupplierForm((current) => ({ ...current, lcStatus: value as SupplierRecord['lcStatus'] }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="not-required">No LC</SelectItem>
-                  <SelectItem value="pending">LC pending</SelectItem>
-                  <SelectItem value="opened">LC opened</SelectItem>
-                  <SelectItem value="released">Released</SelectItem>
-                  <SelectItem value="closed">Closed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input value={supplierForm.lcNumber} onChange={(event) => setSupplierForm((current) => ({ ...current, lcNumber: event.target.value }))} placeholder="LC number" />
-              <Input value={supplierForm.currency} onChange={(event) => setSupplierForm((current) => ({ ...current, currency: event.target.value }))} placeholder="Currency" />
-            </div>
-
-            <div className="grid gap-4 rounded-2xl border border-border/70 bg-muted/30 p-4 sm:grid-cols-2">
-              <Input type="number" min="0" value={supplierForm.productCost} onChange={(event) => setSupplierForm((current) => ({ ...current, productCost: event.target.value }))} placeholder="Product cost" />
-              <Input type="number" min="0" value={supplierForm.shippingCost} onChange={(event) => setSupplierForm((current) => ({ ...current, shippingCost: event.target.value }))} placeholder="Shipping cost" />
-              <Input type="number" min="0" value={supplierForm.customsDuty} onChange={(event) => setSupplierForm((current) => ({ ...current, customsDuty: event.target.value }))} placeholder="Customs duty" />
-              <Input type="number" min="0" value={supplierForm.otherCost} onChange={(event) => setSupplierForm((current) => ({ ...current, otherCost: event.target.value }))} placeholder="Other cost" />
-              <div className="sm:col-span-2 rounded-xl border border-border/70 bg-card p-4">
-                <p className="text-sm text-muted-foreground">Calculated landed cost</p>
-                <p className="mt-1 text-2xl font-semibold">{formatCurrency(previewLandedCost, supplierForm.currency || currency)}</p>
+            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact details</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Supplier name<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} placeholder="e.g. Shenzhen Auto Parts Co." required />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Phone number<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} placeholder="e.g. 01711-000000" required />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Company <span className="font-normal text-muted-foreground">(optional)</span>
+                  </p>
+                  <Input value={supplierForm.company} onChange={(event) => setSupplierForm((current) => ({ ...current, company: event.target.value }))} placeholder="Trade name, if different" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Email <span className="font-normal text-muted-foreground">(optional)</span>
+                  </p>
+                  <Input value={supplierForm.email} onChange={(event) => setSupplierForm((current) => ({ ...current, email: event.target.value }))} placeholder="name@company.com" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Location <span className="font-normal text-muted-foreground">(optional)</span>
+                  </p>
+                  <Input value={supplierForm.location} onChange={(event) => setSupplierForm((current) => ({ ...current, location: event.target.value }))} placeholder="City / address" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Country</p>
+                  <Input
+                    list="supplier-country-options"
+                    value={supplierForm.country}
+                    onChange={(event) => setSupplierForm((current) => ({ ...current, country: event.target.value }))}
+                    placeholder="Bangladesh"
+                  />
+                  <datalist id="supplier-country-options">
+                    {countryOptions.map((country) => (
+                      <option key={country} value={country} />
+                    ))}
+                  </datalist>
+                </div>
               </div>
             </div>
 
-            <Textarea value={supplierForm.notes} onChange={(event) => setSupplierForm((current) => ({ ...current, notes: event.target.value }))} placeholder="LC, shipment, customs, or importer notes" rows={4} />
+            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Trade type &amp; currency</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Supplier type</p>
+                  <Select value={supplierForm.supplierType} onValueChange={(value) => setSupplierForm((current) => ({ ...current, supplierType: value as SupplierRecord['supplierType'] }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="local">Local supplier</SelectItem>
+                      <SelectItem value="foreign">Foreign supplier</SelectItem>
+                      <SelectItem value="importer">Importer</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Billing currency</p>
+                  <Select value={supplierForm.currency} onValueChange={(value) => setSupplierForm((current) => ({ ...current, currency: value }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {currencyOptions.map((option) => (
+                        <SelectItem key={option} value={option}>{option}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {supplierForm.supplierType !== 'local' ? (
+                <div className="space-y-4 rounded-xl border border-border/70 bg-muted/30 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Letter of Credit (LC) tracking
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">LC status</p>
+                      <Select value={supplierForm.lcStatus} onValueChange={(value) => setSupplierForm((current) => ({ ...current, lcStatus: value as SupplierRecord['lcStatus'] }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="not-required">No LC</SelectItem>
+                          <SelectItem value="pending">LC pending</SelectItem>
+                          <SelectItem value="opened">LC opened</SelectItem>
+                          <SelectItem value="released">Released</SelectItem>
+                          <SelectItem value="closed">Closed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-foreground">
+                        LC number <span className="font-normal text-muted-foreground">(optional)</span>
+                      </p>
+                      <Input value={supplierForm.lcNumber} onChange={(event) => setSupplierForm((current) => ({ ...current, lcNumber: event.target.value }))} placeholder="Bank LC reference" />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <details className="group space-y-4 rounded-2xl border border-border/70 p-4">
+              <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                + Initial cost estimate <span className="font-normal normal-case">(optional — exact costs are recorded per purchase)</span>
+              </summary>
+              <div className="grid gap-4 pt-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Typical product cost</p>
+                  <Input type="number" min="0" value={supplierForm.productCost} onChange={(event) => setSupplierForm((current) => ({ ...current, productCost: event.target.value }))} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Shipping cost</p>
+                  <Input type="number" min="0" value={supplierForm.shippingCost} onChange={(event) => setSupplierForm((current) => ({ ...current, shippingCost: event.target.value }))} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Customs duty</p>
+                  <Input type="number" min="0" value={supplierForm.customsDuty} onChange={(event) => setSupplierForm((current) => ({ ...current, customsDuty: event.target.value }))} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Other cost</p>
+                  <Input type="number" min="0" value={supplierForm.otherCost} onChange={(event) => setSupplierForm((current) => ({ ...current, otherCost: event.target.value }))} placeholder="0" />
+                </div>
+                <div className="sm:col-span-2 rounded-xl border border-border/70 bg-card p-4">
+                  <p className="text-sm text-muted-foreground">Calculated landed cost</p>
+                  <p className="mt-1 text-2xl font-semibold">{formatCurrency(previewLandedCost, supplierForm.currency || currency)}</p>
+                </div>
+              </div>
+            </details>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                Notes <span className="font-normal text-muted-foreground">(optional)</span>
+              </p>
+              <Textarea value={supplierForm.notes} onChange={(event) => setSupplierForm((current) => ({ ...current, notes: event.target.value }))} placeholder="LC, shipment, customs, or importer notes" rows={4} />
+            </div>
             <div className="flex justify-end gap-3">
               <Button type="button" variant="outline" className="rounded-xl" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button type="submit" className="rounded-xl">{editingSupplier ? 'Update supplier' : 'Save supplier'}</Button>

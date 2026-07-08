@@ -1,9 +1,10 @@
 "use client"
 
 import { useMemo, useState, type FormEvent } from 'react'
-import { Check, Edit, MapPin, Phone, Plus, Search, Trash2, Wrench } from 'lucide-react'
+import { Check, Crown, Edit, MapPin, Phone, Plus, Search, Trash2, Wrench } from 'lucide-react'
 
 import { AdminShell } from '@/components/admin/AdminShell'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -26,7 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useERP } from '@/lib/erp/provider'
 import type { CustomerInput, CustomerRecord } from '@/lib/erp/types'
-import { formatCurrency, formatDate, toArray } from '@/lib/erp/utils'
+import { formatCurrency, formatDate, isPremiumCustomer, toArray } from '@/lib/erp/utils'
 import { cn } from '@/lib/utils'
 
 type CustomerFormState = {
@@ -91,6 +92,7 @@ export default function CustomersPage() {
   const orders = useMemo(() => toArray(data?.orders), [data?.orders])
   const [query, setQuery] = useState('')
   const [supportFilter, setSupportFilter] = useState<CustomerRecord['supportStatus'] | 'all'>('all')
+  const [premiumOnly, setPremiumOnly] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null)
   const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm)
@@ -110,6 +112,7 @@ export default function CustomersPage() {
           dueTotal: customerOrders.reduce((sum, order) => sum + order.due, 0),
           lastPurchaseDate: lastOrder?.createdAt ?? customer.updatedAt,
           hasOrders: customerOrders.length > 0,
+          isPremium: customer.isPremium || isPremiumCustomer(purchaseTotal),
         }
       })
       .sort((left, right) => right.purchaseTotal - left.purchaseTotal)
@@ -118,7 +121,7 @@ export default function CustomersPage() {
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
 
-    return customerRows.filter(({ customer }) => {
+    return customerRows.filter(({ customer, isPremium }) => {
       const matchesSearch =
         !normalizedQuery ||
         [customer.name, customer.company, customer.phone, customer.location, customer.supportNote]
@@ -126,10 +129,11 @@ export default function CustomersPage() {
           .toLowerCase()
           .includes(normalizedQuery)
       const matchesSupport = supportFilter === 'all' || customer.supportStatus === supportFilter
+      const matchesPremium = !premiumOnly || isPremium
 
-      return matchesSearch && matchesSupport
+      return matchesSearch && matchesSupport && matchesPremium
     })
-  }, [customerRows, query, supportFilter])
+  }, [customerRows, query, supportFilter, premiumOnly])
 
   const metrics = useMemo(() => {
     return {
@@ -137,6 +141,7 @@ export default function CustomersPage() {
       purchaseTotal: customerRows.reduce((sum, row) => sum + row.purchaseTotal, 0),
       dueTotal: customers.reduce((sum, customer) => sum + customer.due, 0),
       supportOpen: customers.filter((customer) => ['needed', 'in-progress'].includes(customer.supportStatus)).length,
+      premiumCount: customerRows.filter((row) => row.isPremium).length,
     }
   }, [customerRows, customers])
 
@@ -190,6 +195,29 @@ export default function CustomersPage() {
     }
   }
 
+  async function handleTogglePremium(customer: CustomerRecord) {
+    setFeedback(null)
+
+    try {
+      await saveCustomer(
+        {
+          name: customer.name,
+          company: customer.company,
+          phone: customer.phone,
+          location: customer.location,
+          due: customer.due,
+          supportStatus: customer.supportStatus,
+          supportNote: customer.supportNote,
+          isPremium: !customer.isPremium,
+        },
+        customer.id
+      )
+      setFeedback(`${customer.name} marked as ${!customer.isPremium ? 'premium' : 'regular'} customer.`)
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to update premium status.')
+    }
+  }
+
   async function handleSupportStatusChange(
     customer: CustomerRecord,
     supportStatus: CustomerRecord['supportStatus']
@@ -222,12 +250,13 @@ export default function CustomersPage() {
   return (
     <AdminShell active="Customers (CRM)">
       <div className="space-y-6">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           {[
             ['Customers', metrics.totalCustomers.toLocaleString('en-BD'), 'Active CRM records'],
             ['Total purchase', formatCurrency(metrics.purchaseTotal, currency), 'From sales history'],
             ['Due balance', formatCurrency(metrics.dueTotal, currency), 'Customer ledger due'],
             ['Support open', metrics.supportOpen.toLocaleString('en-BD'), 'Needs servicing follow-up'],
+            ['Premium customers', metrics.premiumCount.toLocaleString('en-BD'), 'Lifetime spend over 2,00,000'],
           ].map(([label, value, note]) => (
             <Card key={label} className="border-border/70 shadow-sm">
               <CardContent className="p-5">
@@ -251,14 +280,14 @@ export default function CustomersPage() {
               <CardTitle>Customer data table</CardTitle>
               <CardDescription>Search by name, phone, company, location, or support note.</CardDescription>
             </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_190px_auto]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_190px_auto_auto]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="pl-9"
-                  placeholder="Search customers"
+                  placeholder="Search by name or phone"
                 />
               </div>
               <Select value={supportFilter} onValueChange={(value) => setSupportFilter(value as typeof supportFilter)}>
@@ -273,6 +302,13 @@ export default function CustomersPage() {
                   <SelectItem value="none">No support</SelectItem>
                 </SelectContent>
               </Select>
+              <Button
+                variant={premiumOnly ? 'default' : 'outline'}
+                className="h-10 rounded-xl"
+                onClick={() => setPremiumOnly((current) => !current)}
+              >
+                Premium only
+              </Button>
               <Button onClick={openCreateDialog} className="h-10 rounded-xl">
                 <Plus className="mr-2 h-4 w-4" />
                 Add customer
@@ -294,12 +330,49 @@ export default function CustomersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRows.map(({ customer, orderCount, purchaseTotal, dueTotal, lastPurchaseDate, hasOrders }) => (
+                  {filteredRows.map(({ customer, orderCount, purchaseTotal, dueTotal, lastPurchaseDate, hasOrders, isPremium }) => (
                     <TableRow key={customer.id}>
                       <TableCell className="min-w-56">
-                        <div>
-                          <p className="font-semibold">{customer.name}</p>
-                          <p className="text-sm text-muted-foreground">{customer.company || 'Retail'}</p>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => void handleTogglePremium(customer)}
+                            className="relative shrink-0 rounded-full outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-primary"
+                            aria-pressed={isPremium}
+                            aria-label={`Toggle premium status for ${customer.name}`}
+                            title={isPremium ? 'Premium customer — click to unset' : 'Mark as premium customer'}
+                          >
+                            <Avatar
+                              className={cn(
+                                'h-10 w-10 ring-2 transition-colors',
+                                isPremium ? 'ring-amber-400' : 'ring-transparent hover:ring-border'
+                              )}
+                            >
+                              <AvatarFallback
+                                className={cn(
+                                  isPremium
+                                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                    : 'bg-muted text-muted-foreground'
+                                )}
+                              >
+                                {customer.name
+                                  .split(' ')
+                                  .map((part) => part[0])
+                                  .slice(0, 2)
+                                  .join('')
+                                  .toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            {isPremium ? (
+                              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-white ring-2 ring-background">
+                                <Crown className="h-2.5 w-2.5" />
+                              </span>
+                            ) : null}
+                          </button>
+                          <div>
+                            <p className="font-semibold">{customer.name}</p>
+                            <p className="text-sm text-muted-foreground">{customer.company || 'Retail'}</p>
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="min-w-44">
@@ -315,7 +388,14 @@ export default function CustomersPage() {
                         </div>
                       </TableCell>
                       <TableCell className="min-w-44">
-                        <p className="font-medium">{formatCurrency(purchaseTotal, currency)}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{formatCurrency(purchaseTotal, currency)}</p>
+                          {isPremium ? (
+                            <Badge className="rounded-full bg-amber-500/15 text-amber-700 hover:bg-amber-500/15 dark:text-amber-300">
+                              Premium
+                            </Badge>
+                          ) : null}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {orderCount} orders, last {formatDate(lastPurchaseDate)}
                         </p>
@@ -392,65 +472,111 @@ export default function CustomersPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingCustomer ? 'Edit customer' : 'Add new customer'}</DialogTitle>
-            <DialogDescription>Save the required CRM, purchase due, and service-tracking details.</DialogDescription>
+            <DialogDescription>
+              {editingCustomer
+                ? 'Update contact details, due balance, and service status.'
+                : 'Just the essentials — you can add due balance or service notes later from the customer list.'}
+            </DialogDescription>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                value={customerForm.name}
-                onChange={(event) => setCustomerForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder="Customer name"
-                required
-              />
-              <Input
-                value={customerForm.phone}
-                onChange={(event) => setCustomerForm((current) => ({ ...current, phone: event.target.value }))}
-                placeholder="Phone number"
-                required
-              />
-              <Input
-                value={customerForm.company}
-                onChange={(event) => setCustomerForm((current) => ({ ...current, company: event.target.value }))}
-                placeholder="Company or organization"
-              />
-              <Input
-                value={customerForm.location}
-                onChange={(event) => setCustomerForm((current) => ({ ...current, location: event.target.value }))}
-                placeholder="Customer location"
-              />
-              <Input
-                type="number"
-                min="0"
-                value={customerForm.due}
-                onChange={(event) => setCustomerForm((current) => ({ ...current, due: event.target.value }))}
-                placeholder="Opening due"
-              />
-              <Select
-                value={customerForm.supportStatus}
-                onValueChange={(value) =>
-                  setCustomerForm((current) => ({
-                    ...current,
-                    supportStatus: value as CustomerRecord['supportStatus'],
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No support</SelectItem>
-                  <SelectItem value="needed">Support needed</SelectItem>
-                  <SelectItem value="in-progress">In service</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                </SelectContent>
-              </Select>
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact details</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Customer name<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input
+                    value={customerForm.name}
+                    onChange={(event) => setCustomerForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="e.g. Md. Karim Uddin"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Phone number<span className="ml-0.5 text-rose-500">*</span>
+                  </p>
+                  <Input
+                    value={customerForm.phone}
+                    onChange={(event) => setCustomerForm((current) => ({ ...current, phone: event.target.value }))}
+                    placeholder="e.g. 01711-000000"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Company <span className="font-normal text-muted-foreground">(optional)</span>
+                  </p>
+                  <Input
+                    value={customerForm.company}
+                    onChange={(event) => setCustomerForm((current) => ({ ...current, company: event.target.value }))}
+                    placeholder="e.g. Karim Traders"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Location <span className="font-normal text-muted-foreground">(optional)</span>
+                  </p>
+                  <Input
+                    value={customerForm.location}
+                    onChange={(event) => setCustomerForm((current) => ({ ...current, location: event.target.value }))}
+                    placeholder="e.g. Mirpur, Dhaka"
+                  />
+                </div>
+              </div>
             </div>
-            <Textarea
-              value={customerForm.supportNote}
-              onChange={(event) => setCustomerForm((current) => ({ ...current, supportNote: event.target.value }))}
-              placeholder="Technical support or servicing note"
-              rows={4}
-            />
+
+            {editingCustomer ? (
+              <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Due balance &amp; service status
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">Due balance ({currency ?? 'BDT'})</p>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={customerForm.due}
+                      onChange={(event) => setCustomerForm((current) => ({ ...current, due: event.target.value }))}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">Support status</p>
+                    <Select
+                      value={customerForm.supportStatus}
+                      onValueChange={(value) =>
+                        setCustomerForm((current) => ({
+                          ...current,
+                          supportStatus: value as CustomerRecord['supportStatus'],
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No support</SelectItem>
+                        <SelectItem value="needed">Support needed</SelectItem>
+                        <SelectItem value="in-progress">In service</SelectItem>
+                        <SelectItem value="resolved">Resolved</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Service note</p>
+                  <Textarea
+                    value={customerForm.supportNote}
+                    onChange={(event) => setCustomerForm((current) => ({ ...current, supportNote: event.target.value }))}
+                    placeholder="Technical support or servicing note"
+                    rows={4}
+                  />
+                </div>
+              </div>
+            ) : null}
             <div className="flex justify-end gap-3">
               <Button type="button" variant="outline" className="rounded-xl" onClick={() => setDialogOpen(false)}>
                 Cancel
