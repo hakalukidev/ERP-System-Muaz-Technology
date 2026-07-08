@@ -1,5 +1,5 @@
-import { DashboardScreen } from '@/components/admin/DashboardScreen';
+import { LoginScreen } from '@/components/auth/LoginScreen'
 
 export default function HomePage() {
-  return <DashboardScreen />;
+  return <LoginScreen />
 }
