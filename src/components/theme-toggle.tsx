@@ -25,13 +25,12 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
     <Button
       type="button"
       variant="outline"
-      size="sm"
-      className={cn("gap-2 rounded-full", className)}
+      size="icon"
+      className={cn("rounded-full", className)}
       aria-label="Toggle color mode"
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >
       {isDark ? <SunMedium className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      <span className="hidden sm:inline">{isDark ? "Light mode" : "Dark mode"}</span>
     </Button>
   )
 }

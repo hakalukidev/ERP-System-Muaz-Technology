@@ -163,7 +163,7 @@ function SidebarContent({
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="space-y-4 border-b border-sidebar-border px-5 py-6">
         <Link href="/admin/dashboard" className="flex items-center gap-3" onClick={onNavigate}>
-            <Image src="/muaz-logo.svg" alt="ERP" width={34} height={34} className="h-8 w-8" />
+            <Image src="/muaz_icon.png" alt="ERP" width={34} height={34} className="h-8 w-8 rounded-md object-contain" />
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.28em] text-sidebar-foreground/60">
             ERP
@@ -226,21 +226,11 @@ function SidebarContent({
           ))}
         </div>
 
-        <div className="pt-4">
-          <div className="rounded-2xl border border-sidebar-border/80 bg-sidebar-accent/40 px-4 py-4 text-xs leading-5 text-sidebar-foreground/70">
-            <p className="font-medium text-sidebar-foreground">
-              ©{' '}
-              <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-sidebar-foreground hover:underline">
-                hakaluki.dev
-              </a>
-            </p>
-            <p className="mt-1">
-              Developed by{' '}
-              <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-sidebar-foreground hover:underline">
-                hakaluki.dev
-              </a>
-            </p>
-          </div>
+        <div className="px-2 pt-4 text-xs leading-5 text-sidebar-foreground/70">
+          Developed by{' '}
+          <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-sidebar-foreground hover:underline">
+            hakaluki.dev
+          </a>
         </div>
       </div>
     </div>
