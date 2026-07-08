@@ -12,11 +12,15 @@ import { get, onValue, ref, set, update } from 'firebase/database'
 
 import { createDefaultERPData } from '@/lib/erp/defaultData'
 import type {
+  CustomerInput,
+  CustomerRecord,
   ERPData,
   OrderInput,
   OrderRecord,
   ProductInput,
   PurchaseInput,
+  SupplierInput,
+  SupplierRecord,
   TaskInput,
   TaskRecord,
   UserInput,
@@ -47,6 +51,10 @@ type ERPContextValue = {
   createUser: (input: UserInput) => Promise<void>
   hasPermission: (permission: string) => boolean
   seedDemoData: () => Promise<void>
+  saveCustomer: (input: CustomerInput, customerId?: string) => Promise<void>
+  deleteCustomer: (customerId: string) => Promise<void>
+  saveSupplier: (input: SupplierInput, supplierId?: string) => Promise<void>
+  deleteSupplier: (supplierId: string) => Promise<void>
   saveProduct: (input: ProductInput, productId?: string) => Promise<void>
   deleteProduct: (productId: string) => Promise<void>
   saveWarehouse: (input: WarehouseInput, warehouseId?: string) => Promise<void>
@@ -87,6 +95,64 @@ function mergeRecordMap<T extends { id: string }>(defaults: Record<string, T>, c
   return merged
 }
 
+function normalizeCustomerRecord(customer: CustomerRecord): CustomerRecord {
+  const now = new Date().toISOString()
+
+  return {
+    ...customer,
+    company: customer.company || 'Retail',
+    phone: customer.phone || '',
+    location: customer.location || '',
+    due: Number(customer.due ?? 0),
+    supportStatus: customer.supportStatus ?? 'none',
+    supportNote: customer.supportNote || '',
+    createdAt: customer.createdAt || now,
+    updatedAt: customer.updatedAt || customer.createdAt || now,
+  }
+}
+
+function normalizeCustomerMap(customers?: Record<string, CustomerRecord> | null) {
+  return Object.fromEntries(
+    Object.entries(mergeRecordMap(DEFAULT_ERP_DATA.customers, customers)).map(([id, customer]) => [
+      id,
+      normalizeCustomerRecord(customer),
+    ])
+  )
+}
+
+function normalizeSupplierRecord(supplier: SupplierRecord): SupplierRecord {
+  const now = new Date().toISOString()
+
+  return {
+    ...supplier,
+    company: supplier.company || supplier.name || 'Supplier',
+    phone: supplier.phone || '',
+    email: supplier.email || '',
+    location: supplier.location || '',
+    supplierType: supplier.supplierType ?? 'local',
+    country: supplier.country || 'Bangladesh',
+    lcNumber: supplier.lcNumber || '',
+    lcStatus: supplier.lcStatus ?? 'not-required',
+    productCost: Number(supplier.productCost ?? 0),
+    shippingCost: Number(supplier.shippingCost ?? 0),
+    customsDuty: Number(supplier.customsDuty ?? 0),
+    otherCost: Number(supplier.otherCost ?? 0),
+    currency: supplier.currency || 'BDT',
+    notes: supplier.notes || '',
+    createdAt: supplier.createdAt || now,
+    updatedAt: supplier.updatedAt || supplier.createdAt || now,
+  }
+}
+
+function normalizeSupplierMap(suppliers?: Record<string, SupplierRecord> | null) {
+  return Object.fromEntries(
+    Object.entries(mergeRecordMap(DEFAULT_ERP_DATA.suppliers, suppliers)).map(([id, supplier]) => [
+      id,
+      normalizeSupplierRecord(supplier),
+    ])
+  )
+}
+
 function normalizeERPData(data: ERPData | null): ERPData | null {
   if (!data) {
     return DEFAULT_ERP_DATA
@@ -97,6 +163,8 @@ function normalizeERPData(data: ERPData | null): ERPData | null {
     ...data,
     roles: mergeRecordMap(DEFAULT_ERP_DATA.roles, data.roles),
     users: mergeRecordMap(DEFAULT_ERP_DATA.users, data.users),
+    suppliers: normalizeSupplierMap(data.suppliers),
+    customers: normalizeCustomerMap(data.customers),
     settings: {
       ...DEFAULT_ERP_DATA.settings,
       ...data.settings,
@@ -161,6 +229,38 @@ function normalizeWarehouseInput(input: WarehouseInput) {
   return {
     name: input.name.trim(),
     location: input.location.trim(),
+  }
+}
+
+function normalizeCustomerInput(input: CustomerInput) {
+  return {
+    name: input.name.trim(),
+    company: input.company?.trim() || 'Retail',
+    phone: input.phone.trim(),
+    location: input.location?.trim() ?? '',
+    due: Math.max(input.due ?? 0, 0),
+    supportStatus: input.supportStatus ?? 'none',
+    supportNote: input.supportNote?.trim() ?? '',
+  }
+}
+
+function normalizeSupplierInput(input: SupplierInput) {
+  return {
+    name: input.name.trim(),
+    company: input.company?.trim() || input.name.trim(),
+    phone: input.phone.trim(),
+    email: input.email?.trim() ?? '',
+    location: input.location?.trim() ?? '',
+    supplierType: input.supplierType ?? 'local',
+    country: input.country?.trim() || 'Bangladesh',
+    lcNumber: input.lcNumber?.trim() ?? '',
+    lcStatus: input.lcStatus ?? 'not-required',
+    productCost: Math.max(input.productCost ?? 0, 0),
+    shippingCost: Math.max(input.shippingCost ?? 0, 0),
+    customsDuty: Math.max(input.customsDuty ?? 0, 0),
+    otherCost: Math.max(input.otherCost ?? 0, 0),
+    currency: input.currency?.trim().toUpperCase() || 'BDT',
+    notes: input.notes?.trim() ?? '',
   }
 }
 
@@ -439,6 +539,121 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         ? `Updated ${warehouse.name} warehouse details.`
         : `Added ${warehouse.name} warehouse.`
     )
+  }
+
+  async function saveCustomer(input: CustomerInput, customerId?: string) {
+    if (!data) {
+      return
+    }
+
+    const normalized = normalizeCustomerInput(input)
+
+    if (!normalized.name) {
+      throw new Error('Customer name is required.')
+    }
+
+    if (!normalized.phone) {
+      throw new Error('Customer phone number is required.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const existingCustomer = customerId ? data.customers[customerId] : null
+    const id = existingCustomer?.id ?? createId('customer')
+    const now = new Date().toISOString()
+    const customer = {
+      id,
+      ...normalized,
+      createdAt: existingCustomer?.createdAt ?? now,
+      updatedAt: now,
+    }
+
+    await update(ref(db, 'erp/customers'), { [id]: customer })
+    await writeActivity(
+      existingCustomer ? 'customer_updated' : 'customer_created',
+      'customers',
+      existingCustomer ? `Updated ${customer.name} CRM details.` : `Added customer ${customer.name}.`
+    )
+  }
+
+  async function deleteCustomer(customerId: string) {
+    if (!data) {
+      return
+    }
+
+    const customer = data.customers[customerId]
+    if (!customer) {
+      throw new Error('Customer not found.')
+    }
+
+    const hasOrders = Object.values(data.orders).some((order) => order.customerId === customerId)
+    if (hasOrders) {
+      throw new Error('Customers with purchase history cannot be deleted.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), {
+      [`customers/${customerId}`]: null,
+    })
+    await writeActivity('customer_deleted', 'customers', `Deleted customer ${customer.name}.`)
+  }
+
+  async function saveSupplier(input: SupplierInput, supplierId?: string) {
+    if (!data) {
+      return
+    }
+
+    const normalized = normalizeSupplierInput(input)
+
+    if (!normalized.name) {
+      throw new Error('Supplier name is required.')
+    }
+
+    if (!normalized.phone) {
+      throw new Error('Supplier phone number is required.')
+    }
+
+    const db = getDatabaseOrThrow()
+    const existingSupplier = supplierId ? data.suppliers[supplierId] : null
+    const id = existingSupplier?.id ?? createId('supplier')
+    const now = new Date().toISOString()
+    const supplier = {
+      id,
+      ...normalized,
+      createdAt: existingSupplier?.createdAt ?? now,
+      updatedAt: now,
+    }
+
+    await update(ref(db, 'erp/suppliers'), { [id]: supplier })
+    await writeActivity(
+      existingSupplier ? 'supplier_updated' : 'supplier_created',
+      'suppliers',
+      existingSupplier
+        ? `Updated ${supplier.name} supplier and import details.`
+        : `Added supplier ${supplier.name}.`
+    )
+  }
+
+  async function deleteSupplier(supplierId: string) {
+    if (!data) {
+      return
+    }
+
+    const supplier = data.suppliers[supplierId]
+    if (!supplier) {
+      throw new Error('Supplier not found.')
+    }
+
+    const hasProducts = Object.values(data.products).some((product) => product.supplierId === supplierId)
+    const hasPurchases = Object.values(data.purchases).some((purchase) => purchase.supplierId === supplierId)
+    if (hasProducts || hasPurchases) {
+      throw new Error('Suppliers with product or purchase history cannot be deleted.')
+    }
+
+    const db = getDatabaseOrThrow()
+    await update(ref(db, 'erp'), {
+      [`suppliers/${supplierId}`]: null,
+    })
+    await writeActivity('supplier_deleted', 'suppliers', `Deleted supplier ${supplier.name}.`)
   }
 
   async function deleteWarehouse(warehouseId: string) {
@@ -725,6 +940,10 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       seedDemoData,
       saveProduct,
       deleteProduct,
+      saveCustomer,
+      deleteCustomer,
+      saveSupplier,
+      deleteSupplier,
       saveWarehouse,
       deleteWarehouse,
       recordPurchase,
@@ -749,6 +968,3 @@ export function useERP() {
 
   return context
 }
-
-
-

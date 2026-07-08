@@ -34,6 +34,20 @@ export type SupplierRecord = {
   name: string
   company: string
   phone: string
+  email: string
+  location: string
+  supplierType: 'local' | 'foreign' | 'importer'
+  country: string
+  lcNumber: string
+  lcStatus: 'not-required' | 'pending' | 'opened' | 'released' | 'closed'
+  productCost: number
+  shippingCost: number
+  customsDuty: number
+  otherCost: number
+  currency: string
+  notes: string
+  createdAt: string
+  updatedAt: string
 }
 
 export type CustomerRecord = {
@@ -41,7 +55,12 @@ export type CustomerRecord = {
   name: string
   company: string
   phone: string
+  location: string
   due: number
+  supportStatus: 'none' | 'needed' | 'in-progress' | 'resolved'
+  supportNote: string
+  createdAt: string
+  updatedAt: string
 }
 
 export type ProductStatus = 'active' | 'low-stock' | 'out-of-stock'
@@ -195,6 +214,34 @@ export type WarehouseInput = {
   location: string
 }
 
+export type CustomerInput = {
+  name: string
+  company?: string
+  phone: string
+  location?: string
+  due?: number
+  supportStatus?: CustomerRecord['supportStatus']
+  supportNote?: string
+}
+
+export type SupplierInput = {
+  name: string
+  company?: string
+  phone: string
+  email?: string
+  location?: string
+  supplierType?: SupplierRecord['supplierType']
+  country?: string
+  lcNumber?: string
+  lcStatus?: SupplierRecord['lcStatus']
+  productCost?: number
+  shippingCost?: number
+  customsDuty?: number
+  otherCost?: number
+  currency?: string
+  notes?: string
+}
+
 export type PurchaseInput = {
   productId: string
   quantity: number
@@ -228,6 +275,4 @@ export type UserInput = {
   roleId: string
   title: string
 }
-
-
 
