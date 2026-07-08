@@ -4,8 +4,8 @@ import { ERPProvider } from '@/lib/erp/provider'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'ERP - Inventory Management System',
-  description: 'Inventory Management System',
+  title: 'Muaz Technology | ERP System',
+  description: 'Enterprise Resource Planning System',
   icons: {
     icon: '/muaz_icon.png',
     shortcut: '/muaz_icon.png',

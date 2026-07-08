@@ -62,7 +62,7 @@ export function LoginScreen() {
                 Cloud-ready, role-based access
               </span>
               <h1 className="max-w-lg text-5xl font-semibold leading-[1.1] tracking-tight text-foreground">
-                Simple inventory and sales control, everywhere.
+                Simple ERP control for inventory, sales, and finance, everywhere.
               </h1>
               <p className="max-w-md text-base leading-7 text-muted-foreground">
                 Log in once, then manage dashboards, stock, sales, reports, and user access from the same realtime workspace.
