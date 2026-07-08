@@ -14,6 +14,8 @@ import {
   LogOut,
   Menu,
   PackageCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
   ShieldCheck,
   ShoppingCart,
   Truck,
@@ -146,9 +148,13 @@ type AdminShellProps = {
 function SidebarContent({
   active,
   onNavigate,
+  collapsed = false,
+  onToggleCollapse,
 }: {
   active: string
   onNavigate?: () => void
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }) {
   const { hasPermission, currentUser } = useERP()
 
@@ -161,25 +167,51 @@ function SidebarContent({
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="space-y-4 border-b border-sidebar-border px-5 py-6">
-        <Link href="/admin/dashboard" className="flex items-center gap-3" onClick={onNavigate}>
-            <Image src="/muaz_icon.png" alt="ERP" width={34} height={34} className="h-8 w-8 rounded-md object-contain" />
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.28em] text-sidebar-foreground/60">
-            ERP
-            </p>
-            <h2 className="text-lg font-semibold">Muaz Technology</h2>
-          </div>
-        </Link>
+      <div
+        className={cn(
+          'space-y-4 border-b border-sidebar-border py-6',
+          collapsed ? 'px-3' : 'px-5'
+        )}
+      >
+        <div className={cn('flex items-center gap-2', collapsed ? 'flex-col' : 'justify-between')}>
+          <Link
+            href="/admin/dashboard"
+            className={cn('flex min-w-0 items-center gap-3', collapsed && 'justify-center')}
+            onClick={onNavigate}
+          >
+            <Image src="/muaz_icon.png" alt="ERP" width={34} height={34} className="h-8 w-8 shrink-0 rounded-md object-contain" />
+            {!collapsed ? (
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-[0.28em] text-sidebar-foreground/60">
+                  ERP
+                </p>
+                <h2 className="truncate text-lg font-semibold">Muaz Technology</h2>
+              </div>
+            ) : null}
+          </Link>
+          {onToggleCollapse ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden h-8 w-8 shrink-0 rounded-full text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground lg:inline-flex"
+              onClick={onToggleCollapse}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="flex-1 space-y-8 overflow-y-auto px-4 py-6">
+      <div className={cn('flex-1 space-y-8 overflow-y-auto overflow-x-hidden py-6', collapsed ? 'px-2' : 'px-4')}>
         <div className="space-y-6">
           {visibleGroups.map((group) => (
             <div key={group.title} className="space-y-3">
-              <p className="px-2 text-xs font-medium uppercase tracking-[0.26em] text-sidebar-foreground/45">
-                {group.title}
-              </p>
+              {!collapsed ? (
+                <p className="px-2 text-xs font-medium uppercase tracking-[0.26em] text-sidebar-foreground/45">
+                  {group.title}
+                </p>
+              ) : null}
               <nav className="space-y-2">
                 {group.items.map((item) => {
                   const Icon = item.icon
@@ -190,8 +222,10 @@ function SidebarContent({
                       key={item.label}
                       href={item.href}
                       onClick={onNavigate}
+                      title={collapsed ? item.label : undefined}
                       className={cn(
-                        'group flex items-start gap-3 rounded-2xl border px-3 py-3 transition-all',
+                        'group flex items-center gap-3 rounded-2xl border transition-all',
+                        collapsed ? 'justify-center px-0 py-2.5' : 'items-start px-3 py-3',
                         isActive
                           ? 'border-sidebar-primary/25 bg-sidebar-primary text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/20'
                           : 'border-transparent bg-transparent hover:border-sidebar-border hover:bg-sidebar-accent'
@@ -199,7 +233,8 @@ function SidebarContent({
                     >
                       <span
                         className={cn(
-                          'mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl',
+                          !collapsed && 'mt-0.5',
                           isActive
                             ? 'bg-white/18 text-sidebar-primary-foreground'
                             : 'bg-sidebar-accent text-sidebar-foreground'
@@ -207,17 +242,19 @@ function SidebarContent({
                       >
                         <Icon className="h-5 w-5" />
                       </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold">{item.label}</span>
-                        <span
-                          className={cn(
-                            'mt-1 block text-xs leading-5',
-                            isActive ? 'text-sidebar-primary-foreground/80' : 'text-sidebar-foreground/60'
-                          )}
-                        >
-                          {item.description}
+                      {!collapsed ? (
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold">{item.label}</span>
+                          <span
+                            className={cn(
+                              'mt-1 block text-xs leading-5',
+                              isActive ? 'text-sidebar-primary-foreground/80' : 'text-sidebar-foreground/60'
+                            )}
+                          >
+                            {item.description}
+                          </span>
                         </span>
-                      </span>
+                      ) : null}
                     </Link>
                   )
                 })}
@@ -226,12 +263,7 @@ function SidebarContent({
           ))}
         </div>
 
-        <div className="px-2 pt-4 text-xs leading-5 text-sidebar-foreground/70">
-          Developed by{' '}
-          <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-sidebar-foreground hover:underline">
-            hakaluki.dev
-          </a>
-        </div>
+       
       </div>
     </div>
   )
@@ -356,7 +388,19 @@ function NotificationBell() {
 
 export function AdminShell({ active, children }: AdminShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
-  const { currentUser, data, logout, hasPermission } = useERP()
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('admin-sidebar-collapsed') === '1'
+  })
+  const { currentUser, data, logout, hasPermission, loading } = useERP()
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev
+      window.localStorage.setItem('admin-sidebar-collapsed', next ? '1' : '0')
+      return next
+    })
+  }
 
   const allNavigationItems = navigationGroups.flatMap((group) => group.items)
 
@@ -367,6 +411,17 @@ export function AdminShell({ active, children }: AdminShellProps) {
 
   const roleName = currentUser ? data?.roles[currentUser.roleId]?.name ?? currentUser.roleId : 'Loading'
 
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+          Loading workspace...
+        </div>
+      </main>
+    )
+  }
+
   if (!currentUser) {
     return <LoginScreen />
   }
@@ -374,8 +429,13 @@ export function AdminShell({ active, children }: AdminShellProps) {
   return (
     <div className="min-h-screen">
       <div className="mx-auto flex min-h-screen max-w-[1600px]">
-        <aside className="sticky top-0 hidden h-screen w-[320px] border-r border-sidebar-border bg-sidebar shadow-[24px_0_80px_-48px_rgba(15,23,42,0.45)] lg:block">
-          <SidebarContent active={active} />
+        <aside
+          className={cn(
+            'sticky top-0 hidden h-screen shrink-0 border-r border-sidebar-border bg-sidebar shadow-[24px_0_80px_-48px_rgba(15,23,42,0.45)] transition-[width] duration-200 lg:block',
+            collapsed ? 'w-[88px]' : 'w-[320px]'
+          )}
+        >
+          <SidebarContent active={active} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
         </aside>
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
@@ -456,6 +516,12 @@ export function AdminShell({ active, children }: AdminShellProps) {
           <footer className="border-t border-border/60 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
             <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p>{data?.settings.companyName ?? 'ERP'} · {data?.settings.timezone ?? 'Asia/Dhaka'}</p>
+             <div className="px-2 pt-4 text-xs leading-5 text-sidebar-foreground/70">
+            Developed by{' '}
+            <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-sidebar-foreground hover:underline">
+              hakaluki.dev
+            </a>
+          </div>
             </div>
           </footer>
         </div>

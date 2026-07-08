@@ -69,7 +69,7 @@ export function LoginScreen() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-border/70 bg-card/70 px-5 py-4 text-sm leading-6 text-muted-foreground shadow-sm backdrop-blur">
+            <div className=" px-5 py-4 text-sm leading-6 text-muted-foreground shadow-b-sm backdrop-blur">
               <p className="font-medium text-foreground">
                 ©{' '}
                 <a href="https://hakaluki.dev" target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">

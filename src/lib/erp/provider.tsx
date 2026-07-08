@@ -58,13 +58,13 @@ type ERPContextValue = {
   updateUser: (userId: string, input: UserInput) => Promise<void>
   deleteUser: (userId: string) => Promise<void>
   hasPermission: (permission: string) => boolean
-  saveCustomer: (input: CustomerInput, customerId?: string) => Promise<void>
+  saveCustomer: (input: CustomerInput, customerId?: string) => Promise<string>
   deleteCustomer: (customerId: string) => Promise<void>
-  saveSupplier: (input: SupplierInput, supplierId?: string) => Promise<void>
+  saveSupplier: (input: SupplierInput, supplierId?: string) => Promise<string>
   deleteSupplier: (supplierId: string) => Promise<void>
-  saveProduct: (input: ProductInput, productId?: string) => Promise<void>
+  saveProduct: (input: ProductInput, productId?: string) => Promise<string>
   deleteProduct: (productId: string) => Promise<void>
-  saveWarehouse: (input: WarehouseInput, warehouseId?: string) => Promise<void>
+  saveWarehouse: (input: WarehouseInput, warehouseId?: string) => Promise<string>
   deleteWarehouse: (warehouseId: string) => Promise<void>
   recordPurchase: (input: PurchaseInput) => Promise<void>
   createOrder: (input: OrderInput) => Promise<void>
@@ -479,7 +479,7 @@ export function ERPProvider({ children }: { children: ReactNode }) {
 
   async function saveProduct(input: ProductInput, productId?: string) {
     if (!data) {
-      return
+      throw new Error('ERP data not loaded yet.')
     }
 
     const normalized = normalizeProductInput(input)
@@ -554,6 +554,8 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         ['admin', 'store_manager']
       )
     }
+
+    return id
   }
 
   async function deleteProduct(productId: string) {
@@ -581,7 +583,7 @@ export function ERPProvider({ children }: { children: ReactNode }) {
 
   async function saveWarehouse(input: WarehouseInput, warehouseId?: string) {
     if (!data) {
-      return
+      throw new Error('ERP data not loaded yet.')
     }
 
     const normalized = normalizeWarehouseInput(input)
@@ -610,11 +612,13 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         ? `Updated ${warehouse.name} warehouse details.`
         : `Added ${warehouse.name} warehouse.`
     )
+
+    return id
   }
 
   async function saveCustomer(input: CustomerInput, customerId?: string) {
     if (!data) {
-      return
+      throw new Error('ERP data not loaded yet.')
     }
 
     const existingCustomer = customerId ? data.customers[customerId] : null
@@ -647,6 +651,8 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       'customers',
       existingCustomer ? `Updated ${customer.name} CRM details.` : `Added customer ${customer.name}.`
     )
+
+    return id
   }
 
   async function deleteCustomer(customerId: string) {
@@ -673,7 +679,7 @@ export function ERPProvider({ children }: { children: ReactNode }) {
 
   async function saveSupplier(input: SupplierInput, supplierId?: string) {
     if (!data) {
-      return
+      throw new Error('ERP data not loaded yet.')
     }
 
     const normalized = normalizeSupplierInput(input)
@@ -705,6 +711,8 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         ? `Updated ${supplier.name} supplier and import details.`
         : `Added supplier ${supplier.name}.`
     )
+
+    return id
   }
 
   async function deleteSupplier(supplierId: string) {

@@ -8,9 +8,13 @@ import {
 } from 'lucide-react'
 
 import { AdminShell } from './AdminShell'
+import { QuickCreateProductDialog } from './quick-create/QuickCreateProductDialog'
+import { QuickCreateSupplierDialog } from './quick-create/QuickCreateSupplierDialog'
+import { QuickCreateWarehouseDialog } from './quick-create/QuickCreateWarehouseDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import {
   Dialog,
   DialogContent,
@@ -258,6 +262,29 @@ export function StockOverviewScreen() {
   const [isSavingProduct, setIsSavingProduct] = useState(false)
   const [isReceivingPurchase, setIsReceivingPurchase] = useState(false)
   const [isSavingWarehouse, setIsSavingWarehouse] = useState(false)
+  const [quickCreateWarehouseOpen, setQuickCreateWarehouseOpen] = useState(false)
+  const [quickCreateSupplierOpen, setQuickCreateSupplierOpen] = useState(false)
+  const [quickCreatePurchaseSupplierOpen, setQuickCreatePurchaseSupplierOpen] = useState(false)
+  const [quickCreatePurchaseProductOpen, setQuickCreatePurchaseProductOpen] = useState(false)
+  const [pendingSearchText, setPendingSearchText] = useState('')
+
+  const warehouseOptions: ComboboxOption[] = useMemo(
+    () => warehouses.map((warehouse) => ({ value: warehouse.id, label: warehouse.name, sublabel: warehouse.location })),
+    [warehouses]
+  )
+
+  const supplierOptions: ComboboxOption[] = useMemo(
+    () => [
+      { value: SUPPLIER_NONE, label: 'Not assigned' },
+      ...suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name, sublabel: supplier.phone })),
+    ],
+    [suppliers]
+  )
+
+  const purchaseProductOptions: ComboboxOption[] = useMemo(
+    () => products.map((product) => ({ value: product.id, label: product.name, sublabel: `stock ${product.stockQty}` })),
+    [products]
+  )
   const [busyProductId, setBusyProductId] = useState<string | null>(null)
   const [busyWarehouseId, setBusyWarehouseId] = useState<string | null>(null)
   const [activeInventoryView, setActiveInventoryView] = useState<InventoryView>('products')
@@ -794,8 +821,8 @@ export function StockOverviewScreen() {
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Category</p><Input list="product-category-options" placeholder="Lift Series" value={productForm.category} onChange={(event) => setProductForm((current) => ({ ...current, category: event.target.value }))} /><datalist id="product-category-options">{categoryOptions.map((category) => (<option key={category} value={category} />))}</datalist></div>
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Serial number</p><Input placeholder="SN-000123" value={productForm.serialNumber} onChange={(event) => setProductForm((current) => ({ ...current, serialNumber: event.target.value }))} /></div>
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Warranty (months)</p><Input type="number" min="0" placeholder="6" value={productForm.warrantyMonths} onChange={(event) => setProductForm((current) => ({ ...current, warrantyMonths: event.target.value }))} /></div>
-                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Warehouse</p><Select value={productForm.warehouseId} onValueChange={(value) => setProductForm((current) => ({ ...current, warehouseId: value }))}><SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger><SelectContent>{warehouses.map((warehouse) => (<SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.name}</SelectItem>))}</SelectContent></Select></div>
-                  <div className="space-y-2 sm:col-span-2"><p className="text-sm font-medium text-foreground">Supplier</p><Select value={productForm.supplierId} onValueChange={(value) => setProductForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent><SelectItem value={SUPPLIER_NONE}>Not assigned</SelectItem>{suppliers.map((supplier) => (<SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>))}</SelectContent></Select></div>
+                  <div className="space-y-2"><p className="text-sm font-medium text-foreground">Warehouse</p><Combobox options={warehouseOptions} value={productForm.warehouseId} onChange={(value) => setProductForm((current) => ({ ...current, warehouseId: value }))} placeholder="Select warehouse" searchPlaceholder="Search warehouses..." onCreateNew={(typedText) => { setPendingSearchText(typedText); setQuickCreateWarehouseOpen(true) }} createNewLabel="Create warehouse" /></div>
+                  <div className="space-y-2 sm:col-span-2"><p className="text-sm font-medium text-foreground">Supplier</p><Combobox options={supplierOptions} value={productForm.supplierId} onChange={(value) => setProductForm((current) => ({ ...current, supplierId: value }))} placeholder="Select supplier" searchPlaceholder="Search suppliers..." onCreateNew={(typedText) => { setPendingSearchText(typedText); setQuickCreateSupplierOpen(true) }} createNewLabel="Create supplier" /></div>
                 </div>
                 <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="space-y-2"><p className="text-sm font-medium text-foreground">Purchase cost ({currency})</p><Input inputMode="numeric" placeholder="330000" value={productForm.purchasePrice} onChange={(event) => setProductForm((current) => ({ ...current, purchasePrice: event.target.value }))} required /></div>
@@ -832,9 +859,9 @@ export function StockOverviewScreen() {
             </DialogHeader>
             {canManageInventory ? (
               <form className="space-y-5" onSubmit={handleReceivePurchase}>
-                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Product</p><Select value={purchaseForm.productId} onValueChange={(value) => { const product = data?.products[value]; setPurchaseForm((current) => ({ ...current, productId: value, supplierId: product?.supplierId || SUPPLIER_NONE, unitCost: product ? String(product.purchasePrice) : current.unitCost })) }}><SelectTrigger><SelectValue placeholder="Select product" /></SelectTrigger><SelectContent>{products.map((product) => (<SelectItem key={product.id} value={product.id}>{product.name}</SelectItem>))}</SelectContent></Select></div>
+                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Product</p><Combobox options={purchaseProductOptions} value={purchaseForm.productId} onChange={(value) => { const product = data?.products[value]; setPurchaseForm((current) => ({ ...current, productId: value, supplierId: product?.supplierId || SUPPLIER_NONE, unitCost: product ? String(product.purchasePrice) : current.unitCost })) }} placeholder="Select product" searchPlaceholder="Search products..." onCreateNew={(typedText) => { setPendingSearchText(typedText); setQuickCreatePurchaseProductOpen(true) }} createNewLabel="Create product" /></div>
                 {selectedPurchaseProduct ? <div className="rounded-2xl border border-border/70 bg-muted/30 p-4"><div className="grid gap-3 sm:grid-cols-3"><div><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Current stock</p><p className="mt-1 text-lg font-semibold">{selectedPurchaseProduct.stockQty} units</p></div><div><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Warehouse</p><p className="mt-1 text-lg font-semibold">{data?.warehouses[selectedPurchaseProduct.warehouseId]?.name ?? 'Unknown'}</p></div><div><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Last cost</p><p className="mt-1 text-lg font-semibold">{formatCurrency(selectedPurchaseProduct.purchasePrice, currency)}</p></div></div></div> : null}
-                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Supplier</p><Select value={purchaseForm.supplierId} onValueChange={(value) => setPurchaseForm((current) => ({ ...current, supplierId: value }))}><SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent><SelectItem value={SUPPLIER_NONE}>Select supplier</SelectItem>{suppliers.map((supplier) => (<SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>))}</SelectContent></Select></div>
+                <div className="space-y-2"><p className="text-sm font-medium text-foreground">Supplier</p><Combobox options={supplierOptions} value={purchaseForm.supplierId} onChange={(value) => setPurchaseForm((current) => ({ ...current, supplierId: value }))} placeholder="Select supplier" searchPlaceholder="Search suppliers..." onCreateNew={(typedText) => { setPendingSearchText(typedText); setQuickCreatePurchaseSupplierOpen(true) }} createNewLabel="Create supplier" /></div>
                 <div className="grid gap-5 sm:grid-cols-2"><div className="space-y-2"><p className="text-sm font-medium text-foreground">Quantity received</p><Input type="number" min="1" value={purchaseForm.quantity} onChange={(event) => setPurchaseForm((current) => ({ ...current, quantity: event.target.value }))} required /></div><div className="space-y-2"><p className="text-sm font-medium text-foreground">Unit cost</p><Input inputMode="numeric" placeholder="330000" value={purchaseForm.unitCost} onChange={(event) => setPurchaseForm((current) => ({ ...current, unitCost: event.target.value }))} required /></div></div>
                 <div className="grid gap-5 sm:grid-cols-2"><div className="space-y-2"><p className="text-sm font-medium text-foreground">Currency</p><Select value={purchaseForm.currency} onValueChange={(value) => setPurchaseForm((current) => ({ ...current, currency: value }))}><SelectTrigger><SelectValue placeholder="Select currency" /></SelectTrigger><SelectContent>{currencyOptions.map((currencyOption) => (<SelectItem key={currencyOption} value={currencyOption}>{currencyOption}</SelectItem>))}</SelectContent></Select></div><div className="space-y-2 rounded-2xl border border-border/70 p-4"><p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Purchase total</p><p className="mt-1 text-2xl font-semibold">{formatCurrency(purchaseTotal, purchaseForm.currency)}</p><p className="mt-1 text-sm text-muted-foreground">Stock after receive: {(selectedPurchaseProduct?.stockQty ?? 0) + parseAmount(purchaseForm.quantity)} units</p></div></div>
                 <DialogFooter><Button type="button" variant="outline" onClick={() => setReceivePurchaseOpen(false)}>Cancel</Button><Button type="submit" variant="secondary" disabled={isReceivingPurchase}>{isReceivingPurchase ? 'Posting...' : 'Receive stock'}</Button></DialogFooter>
@@ -861,6 +888,39 @@ export function StockOverviewScreen() {
 
         {loading ? <Card className="border-border/70 shadow-sm"><CardContent className="p-4 text-sm text-muted-foreground">Loading inventory...</CardContent></Card> : null}
       </div>
+
+      <QuickCreateWarehouseDialog
+        open={quickCreateWarehouseOpen}
+        onOpenChange={setQuickCreateWarehouseOpen}
+        initialName={pendingSearchText}
+        onCreated={(warehouseId) => setProductForm((current) => ({ ...current, warehouseId }))}
+      />
+      <QuickCreateSupplierDialog
+        open={quickCreateSupplierOpen}
+        onOpenChange={setQuickCreateSupplierOpen}
+        initialName={pendingSearchText}
+        onCreated={(supplierId) => setProductForm((current) => ({ ...current, supplierId }))}
+      />
+      <QuickCreateSupplierDialog
+        open={quickCreatePurchaseSupplierOpen}
+        onOpenChange={setQuickCreatePurchaseSupplierOpen}
+        initialName={pendingSearchText}
+        onCreated={(supplierId) => setPurchaseForm((current) => ({ ...current, supplierId }))}
+      />
+      <QuickCreateProductDialog
+        open={quickCreatePurchaseProductOpen}
+        onOpenChange={setQuickCreatePurchaseProductOpen}
+        initialName={pendingSearchText}
+        onCreated={(productId) => {
+          const product = data?.products[productId]
+          setPurchaseForm((current) => ({
+            ...current,
+            productId,
+            supplierId: product?.supplierId || SUPPLIER_NONE,
+            unitCost: product ? String(product.purchasePrice) : current.unitCost,
+          }))
+        }}
+      />
     </AdminShell>
   )
 }

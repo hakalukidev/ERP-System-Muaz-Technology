@@ -13,9 +13,12 @@ import {
 } from 'lucide-react'
 
 import { AdminShell } from './AdminShell'
+import { QuickCreateCustomerDialog } from './quick-create/QuickCreateCustomerDialog'
+import { QuickCreateProductDialog } from './quick-create/QuickCreateProductDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import {
   Dialog,
   DialogContent,
@@ -93,6 +96,29 @@ export function SalesScreen() {
   const [orderForm, setOrderForm] = useState(emptyOrder)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [newSaleOpen, setNewSaleOpen] = useState(false)
+  const [quickCreateCustomerOpen, setQuickCreateCustomerOpen] = useState(false)
+  const [quickCreateProductOpen, setQuickCreateProductOpen] = useState(false)
+  const [pendingSearchText, setPendingSearchText] = useState('')
+
+  const customerOptions: ComboboxOption[] = useMemo(
+    () =>
+      customers.map((customer) => ({
+        value: customer.id,
+        label: customer.name,
+        sublabel: `due ${formatCurrency(customer.due, data?.settings.currency)}`,
+      })),
+    [customers, data?.settings.currency]
+  )
+
+  const productOptions: ComboboxOption[] = useMemo(
+    () =>
+      products.map((product) => ({
+        value: product.id,
+        label: product.name,
+        sublabel: `stock ${product.stockQty}`,
+      })),
+    [products]
+  )
 
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<OrderRecord['status'] | 'all'>('all')
@@ -589,35 +615,35 @@ export function SalesScreen() {
                 <p className="text-sm font-medium text-foreground">
                   Customer<span className="ml-0.5 text-rose-500">*</span>
                 </p>
-                <Select value={orderForm.customerId} onValueChange={(value) => setOrderForm((current) => ({ ...current, customerId: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.name} · due {formatCurrency(customer.due, data?.settings.currency)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={customerOptions}
+                  value={orderForm.customerId}
+                  onChange={(value) => setOrderForm((current) => ({ ...current, customerId: value }))}
+                  placeholder="Select a customer"
+                  searchPlaceholder="Search customers..."
+                  onCreateNew={(typedText) => {
+                    setPendingSearchText(typedText)
+                    setQuickCreateCustomerOpen(true)
+                  }}
+                  createNewLabel="Create customer"
+                />
               </div>
               <div className="space-y-2">
                 <p className="text-sm font-medium text-foreground">
                   Product<span className="ml-0.5 text-rose-500">*</span>
                 </p>
-                <Select value={orderForm.productId} onValueChange={(value) => setOrderForm((current) => ({ ...current, productId: value }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a product" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {products.map((product) => (
-                      <SelectItem key={product.id} value={product.id}>
-                        {product.name} · stock {product.stockQty}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={productOptions}
+                  value={orderForm.productId}
+                  onChange={(value) => setOrderForm((current) => ({ ...current, productId: value }))}
+                  placeholder="Select a product"
+                  searchPlaceholder="Search products..."
+                  onCreateNew={(typedText) => {
+                    setPendingSearchText(typedText)
+                    setQuickCreateProductOpen(true)
+                  }}
+                  createNewLabel="Create product"
+                />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -717,6 +743,19 @@ export function SalesScreen() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <QuickCreateCustomerDialog
+        open={quickCreateCustomerOpen}
+        onOpenChange={setQuickCreateCustomerOpen}
+        initialName={pendingSearchText}
+        onCreated={(customerId) => setOrderForm((current) => ({ ...current, customerId }))}
+      />
+      <QuickCreateProductDialog
+        open={quickCreateProductOpen}
+        onOpenChange={setQuickCreateProductOpen}
+        initialName={pendingSearchText}
+        onCreated={(productId) => setOrderForm((current) => ({ ...current, productId }))}
+      />
     </AdminShell>
   )
 }
