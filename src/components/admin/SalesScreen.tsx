@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, type FormEvent } from 'react'
-import { CalendarClock, ClipboardPlus, FileDown, PackageCheck, Printer, ReceiptText, ShoppingCart } from 'lucide-react'
+import { CalendarClock, ClipboardPlus, FileDown, Printer, ReceiptText } from 'lucide-react'
 
 import { AdminShell } from './AdminShell'
 import { Badge } from '@/components/ui/badge'
@@ -253,44 +253,6 @@ export function SalesScreen() {
   return (
     <AdminShell active="Sales & Billing">
       <div className="space-y-6">
-        <Card className="overflow-hidden border-border/70 bg-linear-to-br from-card via-card to-secondary/80 shadow-sm">
-          <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Sales desk</Badge>
-                <Badge variant="outline" className="rounded-full">Orders + fulfillment</Badge>
-              </div>
-              <h2 className="mt-4 text-3xl font-semibold tracking-tight">Sales and billing workflow board</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Create sales orders, advance delivery status, and keep dues visible from a single module.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <ShoppingCart className="h-4 w-4" />
-                  Open orders
-                </div>
-                <p className="mt-1 text-2xl font-semibold">{openOrders}</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <PackageCheck className="h-4 w-4" />
-                  Ready to ship
-                </div>
-                <p className="mt-1 text-2xl font-semibold">{readyOrders}</p>
-              </div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <ClipboardPlus className="h-4 w-4" />
-                  Orders with due
-                </div>
-                <p className="mt-1 text-2xl font-semibold">{dueOrders}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         <Card className="border-border/70 shadow-sm">
           <CardHeader>
             <CardTitle>Sales & billing scope</CardTitle>

@@ -54,9 +54,6 @@ function statusTone(status: FeatureItem['status']) {
 
 export function ModuleFeatureScreen({
   active,
-  eyebrow,
-  title,
-  description,
   highlights,
   sections,
   actions,
@@ -64,36 +61,18 @@ export function ModuleFeatureScreen({
   return (
     <AdminShell active={active}>
       <div className="space-y-6">
-        <Card className="overflow-hidden border-border/70 bg-linear-to-br from-card via-card to-primary/5 shadow-sm">
-          <CardContent className="flex flex-col gap-6 p-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="rounded-full bg-primary text-primary-foreground hover:bg-primary">{eyebrow}</Badge>
-                <Badge variant="outline" className="rounded-full">Feature map</Badge>
-              </div>
-              <div>
-                <p className="text-sm font-medium uppercase tracking-[0.24em] text-muted-foreground">IMS ERP</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                  {description}
-                </p>
-              </div>
-            </div>
-
-            {actions?.length ? (
-              <div className="flex flex-wrap gap-3">
-                {actions.map((action) => (
-                  <Button key={action.label} asChild variant={action.variant ?? 'default'} className="rounded-xl">
-                    <Link href={action.href}>
-                      {action.label}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+        {actions?.length ? (
+          <div className="flex flex-wrap gap-3">
+            {actions.map((action) => (
+              <Button key={action.label} asChild variant={action.variant ?? 'default'} className="rounded-xl">
+                <Link href={action.href}>
+                  {action.label}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            ))}
+          </div>
+        ) : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {highlights.map((highlight) => (

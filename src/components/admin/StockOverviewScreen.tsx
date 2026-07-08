@@ -558,19 +558,7 @@ export function StockOverviewScreen() {
       <div className="space-y-6">
         <Card className="border-border/70 shadow-sm">
           <CardContent className="flex flex-col gap-6 p-6">
-            <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-              <div className="max-w-3xl">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Inventory hub</Badge>
-                  <Badge variant="outline" className="rounded-full">Products, stock, and warehouse control</Badge>
-                </div>
-                <h2 className="mt-4 text-3xl font-semibold tracking-tight">Inventory workspace</h2>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  Manage lift and equipment stock with fast product entry, clean purchase receiving, and warehouse-level control.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3 xl:justify-end">
+            <div className="flex flex-wrap gap-3 xl:justify-end">
                 <Button className="rounded-xl" onClick={openCreateProductDialog} disabled={!canManageInventory || warehouses.length === 0}>
                   Add product
                 </Button>
@@ -580,7 +568,6 @@ export function StockOverviewScreen() {
                 <Button variant="outline" className="rounded-xl" onClick={openCreateWarehouseDialog} disabled={!canManageInventory}>
                   Add warehouse
                 </Button>
-              </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -861,18 +848,3 @@ export function StockOverviewScreen() {
     </AdminShell>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

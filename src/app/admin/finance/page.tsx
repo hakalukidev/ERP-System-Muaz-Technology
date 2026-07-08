@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react'
 import { ArrowDownLeft, ArrowUpRight, FileDown, Printer, ReceiptText, Wallet } from 'lucide-react'
 
 import { AdminShell } from '@/components/admin/AdminShell'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -236,34 +235,20 @@ export default function FinancePage() {
   return (
     <AdminShell active="Accounting & Finance">
       <div className="space-y-6">
-        <Card className="overflow-hidden border-border/70 bg-linear-to-br from-card via-card to-secondary/80 shadow-sm">
-          <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Accounting & finance</Badge>
-                <Badge variant="outline" className="rounded-full">Income, expense, profit/loss</Badge>
-              </div>
-              <h2 className="mt-4 text-3xl font-semibold tracking-tight">Finance dashboard</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Track daily and monthly sales, cash received, customer dues, purchase expenses, and automatic profit/loss from one place.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Select value={mode} onValueChange={(value) => setMode(value as typeof mode)}>
-                <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                </SelectContent>
-              </Select>
-              {mode === 'daily' ? (
-                <Input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
-              ) : (
-                <Input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
-              )}
-            </div>
-          </CardContent>
-        </Card>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <Select value={mode} onValueChange={(value) => setMode(value as typeof mode)}>
+              <SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="monthly">Monthly</SelectItem>
+              </SelectContent>
+            </Select>
+            {mode === 'daily' ? (
+              <Input className="w-full sm:w-52" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+            ) : (
+              <Input className="w-full sm:w-52" type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
+            )}
+          </div>
 
         {feedback ? (
           <Card className="border-border/70 bg-primary/5 shadow-sm">

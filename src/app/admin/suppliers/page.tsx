@@ -303,25 +303,6 @@ export default function SuppliersPage() {
   return (
     <AdminShell active="Suppliers & Imports">
       <div className="space-y-6">
-        <Card className="overflow-hidden border-border/70 bg-linear-to-br from-card via-card to-secondary/80 shadow-sm">
-          <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Suppliers & imports</Badge>
-                <Badge variant="outline" className="rounded-full">LC + landed cost</Badge>
-              </div>
-              <h2 className="mt-4 text-3xl font-semibold tracking-tight">Supplier and import tracking</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Manage local suppliers, foreign suppliers, importers, LC status, shipping cost, customs duty, and landed cost until goods reach the warehouse.
-              </p>
-            </div>
-            <Button onClick={openCreateDialog} className="h-11 rounded-xl">
-              <Plus className="mr-2 h-4 w-4" />
-              Add supplier
-            </Button>
-          </CardContent>
-        </Card>
-
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             ['Suppliers', metrics.suppliers.toLocaleString('en-BD'), 'Local, foreign, and importers'],
@@ -351,7 +332,7 @@ export default function SuppliersPage() {
               <CardTitle>Supplier and import data table</CardTitle>
               <CardDescription>Search by supplier, importer, phone, country, LC number, or location.</CardDescription>
             </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_190px]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_190px_auto]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -372,6 +353,10 @@ export default function SuppliersPage() {
                   <SelectItem value="importer">Importer</SelectItem>
                 </SelectContent>
               </Select>
+              <Button onClick={openCreateDialog} className="h-10 rounded-xl">
+                <Plus className="mr-2 h-4 w-4" />
+                Add supplier
+              </Button>
             </div>
           </CardHeader>
           <CardContent>

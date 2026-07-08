@@ -48,37 +48,17 @@ export function DashboardScreen() {
   return (
     <AdminShell active="Dashboard">
       <div className="space-y-6">
-        <Card className="overflow-hidden border-border/70 bg-linear-to-br from-card via-card to-primary/5 shadow-lg shadow-primary/5">
-          <CardContent className="surface-grid flex flex-col gap-6 p-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="rounded-full bg-primary text-primary-foreground hover:bg-primary">Realtime ERP</Badge>
-                <Badge variant="outline" className="rounded-full">Firebase powered</Badge>
-              </div>
-              <div>
-                <p className="text-sm font-medium uppercase tracking-[0.24em] text-muted-foreground">
-                  {data?.settings.companyName ?? 'IMS'}
-                </p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Operational control center</h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                  Track sales, replenishment, dues, and urgent activity from one shared realtime workspace.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Button asChild variant="outline" className="rounded-xl">
-                <Link href="/admin/stock/overview">Add inventory</Link>
-              </Button>
-              <Button asChild variant="outline" className="rounded-xl">
-                <Link href="/admin/sales">Open sales</Link>
-              </Button>
-              <Button asChild className="rounded-xl">
-                <Link href="/admin/reports">Open reports</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="flex flex-wrap gap-3">
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link href="/admin/stock/overview">Add inventory</Link>
+            </Button>
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link href="/admin/sales">Open sales</Link>
+            </Button>
+            <Button asChild className="rounded-xl">
+              <Link href="/admin/reports">Open reports</Link>
+            </Button>
+          </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Card className="border-border/70 shadow-sm">

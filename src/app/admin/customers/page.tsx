@@ -222,25 +222,6 @@ export default function CustomersPage() {
   return (
     <AdminShell active="Customers (CRM)">
       <div className="space-y-6">
-        <Card className="overflow-hidden border-border/70 bg-linear-to-br from-card via-card to-secondary/80 shadow-sm">
-          <CardContent className="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="rounded-full bg-primary/10 text-primary hover:bg-primary/10">Customer CRM</Badge>
-                <Badge variant="outline" className="rounded-full">Purchase + support history</Badge>
-              </div>
-              <h2 className="mt-4 text-3xl font-semibold tracking-tight">Customer relationship management</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Track customer identity, phone, location, organization, purchase amount, due balance, and technical support follow-up.
-              </p>
-            </div>
-            <Button onClick={openCreateDialog} className="h-11 rounded-xl">
-              <Plus className="mr-2 h-4 w-4" />
-              Add customer
-            </Button>
-          </CardContent>
-        </Card>
-
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
             ['Customers', metrics.totalCustomers.toLocaleString('en-BD'), 'Active CRM records'],
@@ -270,7 +251,7 @@ export default function CustomersPage() {
               <CardTitle>Customer data table</CardTitle>
               <CardDescription>Search by name, phone, company, location, or support note.</CardDescription>
             </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_190px]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_190px_auto]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -292,6 +273,10 @@ export default function CustomersPage() {
                   <SelectItem value="none">No support</SelectItem>
                 </SelectContent>
               </Select>
+              <Button onClick={openCreateDialog} className="h-10 rounded-xl">
+                <Plus className="mr-2 h-4 w-4" />
+                Add customer
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
