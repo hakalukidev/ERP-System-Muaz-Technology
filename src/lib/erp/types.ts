@@ -60,6 +60,8 @@ export type CustomerRecord = {
   supportStatus: 'none' | 'needed' | 'in-progress' | 'resolved'
   supportNote: string
   isPremium: boolean
+  leadSource?: 'facebook' | 'local-marketing'
+  reminderCustomer?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -111,6 +113,8 @@ export type OrderRecord = {
   status: OrderStatus
   paymentStatus: PaymentStatus
   total: number
+  subtotal?: number
+  discount?: number
   paid: number
   due: number
   deliveryDate: string
@@ -247,11 +251,24 @@ export type ERPData = {
   sellers: Record<string, SellerRecord>
   sellerTransactions: Record<string, SellerTransactionRecord>
   couriers: Record<string, CourierRecord>
+  investors: Record<string, InvestorRecord>
   settings: SettingsRecord
   meta: {
     seededAt: string
     version: string
   }
+}
+
+export type InvestorRecord = {
+  id: string
+  name: string
+  location: string
+  mobile: string
+  products: string
+  amount: number
+  note: string
+  createdAt: string
+  updatedAt: string
 }
 
 export type ProductInput = {
@@ -288,6 +305,8 @@ export type CustomerInput = {
   supportStatus?: CustomerRecord['supportStatus']
   supportNote?: string
   isPremium?: boolean
+  leadSource?: CustomerRecord['leadSource']
+  reminderCustomer?: boolean
 }
 
 export type SupplierInput = {
@@ -318,8 +337,12 @@ export type PurchaseInput = {
 
 export type OrderInput = {
   customerId: string
-  productId: string
-  quantity: number
+  items: Array<{
+    productId: string
+    quantity: number
+    unitPrice: number
+  }>
+  discount?: number
   paid: number
   deliveryDate: string
   billNumber?: string
@@ -333,6 +356,15 @@ export type ExpenseInput = {
   amount: number
   note?: string
   date?: string
+}
+
+export type InvestorInput = {
+  name: string
+  location?: string
+  mobile: string
+  products?: string
+  amount: number
+  note?: string
 }
 
 export type SellerInput = {
@@ -381,4 +413,3 @@ export type UserInput = {
   roleId: string
   title: string
 }
-

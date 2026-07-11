@@ -591,6 +591,7 @@ export function createDefaultERPData(): ERPData {
         createdAt: shiftDays(0),
       },
     },
+    investors: {},
     sellers: {
       sel_kamal: {
         id: 'sel_kamal',

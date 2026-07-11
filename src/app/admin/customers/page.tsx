@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, type FormEvent } from 'react'
-import { Check, Crown, Edit, MapPin, Phone, Plus, Search, Trash2, Wrench } from 'lucide-react'
+import { BellRing, Check, Crown, Edit, MapPin, Phone, Plus, Search, Trash2, Wrench } from 'lucide-react'
 
 import { AdminShell } from '@/components/admin/AdminShell'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -38,6 +38,8 @@ type CustomerFormState = {
   due: string
   supportStatus: CustomerRecord['supportStatus']
   supportNote: string
+  leadSource: NonNullable<CustomerRecord['leadSource']>
+  reminderCustomer: boolean
 }
 
 const emptyCustomerForm: CustomerFormState = {
@@ -48,6 +50,8 @@ const emptyCustomerForm: CustomerFormState = {
   due: '0',
   supportStatus: 'none',
   supportNote: '',
+  leadSource: 'facebook',
+  reminderCustomer: false,
 }
 
 const supportLabels: Record<CustomerRecord['supportStatus'], string> = {
@@ -82,6 +86,8 @@ function formFromCustomer(customer: CustomerRecord): CustomerFormState {
     due: String(customer.due),
     supportStatus: customer.supportStatus,
     supportNote: customer.supportNote,
+    leadSource: customer.leadSource ?? 'local-marketing',
+    reminderCustomer: customer.reminderCustomer ?? false,
   }
 }
 
@@ -93,6 +99,7 @@ export default function CustomersPage() {
   const [query, setQuery] = useState('')
   const [supportFilter, setSupportFilter] = useState<CustomerRecord['supportStatus'] | 'all'>('all')
   const [premiumOnly, setPremiumOnly] = useState(false)
+  const [reminderOnly, setReminderOnly] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null)
   const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm)
@@ -121,7 +128,7 @@ export default function CustomersPage() {
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
 
-    return customerRows.filter(({ customer, isPremium }) => {
+    return customerRows.filter(({ customer, isPremium, hasOrders }) => {
       const matchesSearch =
         !normalizedQuery ||
         [customer.name, customer.company, customer.phone, customer.location, customer.supportNote]
@@ -130,10 +137,11 @@ export default function CustomersPage() {
           .includes(normalizedQuery)
       const matchesSupport = supportFilter === 'all' || customer.supportStatus === supportFilter
       const matchesPremium = !premiumOnly || isPremium
+      const matchesReminder = !reminderOnly || (customer.reminderCustomer && !hasOrders)
 
-      return matchesSearch && matchesSupport && matchesPremium
+      return matchesSearch && matchesSupport && matchesPremium && matchesReminder
     })
-  }, [customerRows, query, supportFilter, premiumOnly])
+  }, [customerRows, query, supportFilter, premiumOnly, reminderOnly])
 
   const metrics = useMemo(() => {
     return {
@@ -171,6 +179,8 @@ export default function CustomersPage() {
       due: Number(customerForm.due),
       supportStatus: customerForm.supportStatus,
       supportNote: customerForm.supportNote,
+      leadSource: customerForm.leadSource,
+      reminderCustomer: customerForm.reminderCustomer,
     }
 
     try {
@@ -280,7 +290,7 @@ export default function CustomersPage() {
               <CardTitle>Customer data table</CardTitle>
               <CardDescription>Search by name, phone, company, location, or support note.</CardDescription>
             </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(220px,1fr)_190px_auto_auto]">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_190px_auto_auto_auto]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -308,6 +318,14 @@ export default function CustomersPage() {
                 onClick={() => setPremiumOnly((current) => !current)}
               >
                 Premium only
+              </Button>
+              <Button
+                variant={reminderOnly ? 'default' : 'outline'}
+                className="h-10 rounded-xl"
+                onClick={() => setReminderOnly((current) => !current)}
+              >
+                <BellRing className="mr-2 h-4 w-4" />
+                Reminder customers
               </Button>
               <Button onClick={openCreateDialog} className="h-10 rounded-xl">
                 <Plus className="mr-2 h-4 w-4" />
@@ -372,6 +390,16 @@ export default function CustomersPage() {
                           <div>
                             <p className="font-semibold">{customer.name}</p>
                             <p className="text-sm text-muted-foreground">{customer.company || 'Retail'}</p>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              <Badge variant="outline" className="text-xs font-normal">
+                                {customer.leadSource === 'facebook' ? 'From Facebook' : 'From Local Marketing'}
+                              </Badge>
+                              {customer.reminderCustomer && !hasOrders ? (
+                                <Badge className="bg-sky-500/15 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300">
+                                  Reminder
+                                </Badge>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       </TableCell>
@@ -523,6 +551,33 @@ export default function CustomersPage() {
                     onChange={(event) => setCustomerForm((current) => ({ ...current, location: event.target.value }))}
                     placeholder="e.g. Mirpur, Dhaka"
                   />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Customer source</p>
+                  <Select value={customerForm.leadSource} onValueChange={(value) => setCustomerForm((current) => ({ ...current, leadSource: value as CustomerFormState['leadSource'] }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="facebook">From Facebook</SelectItem>
+                      <SelectItem value="local-marketing">From Local Marketing</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Follow-up category</p>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerForm((current) => ({ ...current, reminderCustomer: !current.reminderCustomer }))}
+                    className={cn(
+                      'flex h-10 w-full items-center rounded-md border px-3 text-left text-sm transition-colors',
+                      customerForm.reminderCustomer ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-background'
+                    )}
+                    aria-pressed={customerForm.reminderCustomer}
+                  >
+                    <span className={cn('mr-2 flex h-4 w-4 items-center justify-center rounded border', customerForm.reminderCustomer && 'border-primary bg-primary text-primary-foreground')}>
+                      {customerForm.reminderCustomer ? <Check className="h-3 w-3" /> : null}
+                    </span>
+                    Add as reminder customer
+                  </button>
                 </div>
               </div>
             </div>

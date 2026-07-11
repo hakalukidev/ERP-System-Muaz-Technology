@@ -18,6 +18,7 @@ import type {
   CustomerRecord,
   ERPData,
   ExpenseInput,
+  InvestorInput,
   OrderInput,
   OrderRecord,
   ProductInput,
@@ -74,6 +75,7 @@ type ERPContextValue = {
   markNotificationRead: (notificationId: string) => Promise<void>
   markAllNotificationsRead: (notificationIds: string[]) => Promise<void>
   saveExpense: (input: ExpenseInput, expenseId?: string) => Promise<void>
+  saveInvestor: (input: InvestorInput, investorId?: string) => Promise<void>
   deleteExpense: (expenseId: string) => Promise<void>
   saveSeller: (input: SellerInput, sellerId?: string) => Promise<void>
   deleteSeller: (sellerId: string) => Promise<void>
@@ -216,6 +218,7 @@ function normalizeERPData(data: ERPData | null): ERPData {
     sellers: source.sellers ?? {},
     sellerTransactions: source.sellerTransactions ?? {},
     couriers: source.couriers ?? {},
+    investors: source.investors ?? {},
     settings: {
       ...DEFAULT_ERP_DATA.settings,
       ...source.settings,
@@ -295,6 +298,8 @@ function normalizeCustomerInput(input: CustomerInput) {
     supportStatus: input.supportStatus ?? 'none',
     supportNote: input.supportNote?.trim() ?? '',
     isPremium: input.isPremium ?? false,
+    leadSource: input.leadSource ?? 'local-marketing',
+    reminderCustomer: input.reminderCustomer ?? false,
   }
 }
 
@@ -625,6 +630,8 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     const normalized = normalizeCustomerInput({
       ...input,
       isPremium: input.isPremium ?? existingCustomer?.isPremium ?? false,
+      leadSource: input.leadSource ?? existingCustomer?.leadSource ?? 'local-marketing',
+      reminderCustomer: input.reminderCustomer ?? existingCustomer?.reminderCustomer ?? false,
     })
 
     if (!normalized.name) {
@@ -811,31 +818,52 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     }
 
     const db = getDatabaseOrThrow()
-    const product = data.products[input.productId]
     const customer = data.customers[input.customerId]
-    if (!product || !customer) {
-      throw new Error('Product or customer not found.')
+    if (!customer) {
+      throw new Error('Customer not found.')
     }
 
-    if (input.quantity <= 0) {
-      throw new Error('Quantity must be greater than zero.')
+    if (!input.items.length) {
+      throw new Error('Add at least one product.')
     }
 
-    if (product.stockQty < input.quantity) {
-      throw new Error('Insufficient stock for this order.')
+    const requestedByProduct = new Map<string, number>()
+    const orderItems = input.items.map((item) => {
+      const product = data.products[item.productId]
+      if (!product) throw new Error('Product not found.')
+      if (item.quantity <= 0) throw new Error(`Quantity for ${product.name} must be greater than zero.`)
+      if (item.unitPrice < 0) throw new Error(`Price for ${product.name} cannot be negative.`)
+      requestedByProduct.set(product.id, (requestedByProduct.get(product.id) ?? 0) + item.quantity)
+      return {
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        purchasePrice: product.purchasePrice,
+      }
+    })
+
+    requestedByProduct.forEach((quantity, productId) => {
+      const product = data.products[productId]
+      if (product.stockQty < quantity) throw new Error(`Insufficient stock for ${product.name}.`)
+    })
+
+    const subtotal = orderItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+    const discount = Math.min(Math.max(input.discount ?? 0, 0), subtotal)
+    const total = subtotal - discount
+    if (input.paid < 0) {
+      throw new Error('Paid amount cannot be negative.')
     }
 
     const orderId = createId('order')
-    const total = product.sellingPrice * input.quantity
     const paid = Math.min(Math.max(input.paid, 0), total)
     const due = total - paid
     const now = new Date().toISOString()
     const orderDate = input.orderDate?.trim() || now
-    const nextStock = product.stockQty - input.quantity
     const defaultDueDate = new Date(orderDate)
     defaultDueDate.setDate(defaultDueDate.getDate() + 15)
 
-    await update(ref(db, 'erp'), {
+    const updates: Record<string, unknown> = {
       [`orders/${orderId}`]: {
         id: orderId,
         billNumber: input.billNumber?.trim() || `INV-${Date.now().toString().slice(-8)}`,
@@ -846,6 +874,8 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         status: 'pending',
         paymentStatus: due === 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid',
         total,
+        subtotal,
+        discount,
         paid,
         due,
         deliveryDate: input.deliveryDate,
@@ -853,23 +883,22 @@ export function ERPProvider({ children }: { children: ReactNode }) {
         dueReference: due > 0 ? input.dueReference || 'owner' : '',
         overdueNotified: false,
         createdAt: orderDate,
-        items: [
-          {
-            productId: product.id,
-            productName: product.name,
-            quantity: input.quantity,
-            unitPrice: product.sellingPrice,
-            purchasePrice: product.purchasePrice,
-          },
-        ],
+        items: orderItems,
       },
-      [`products/${product.id}/stockQty`]: nextStock,
-      [`products/${product.id}/status`]: getProductStatus(nextStock, product.minStock),
-      [`products/${product.id}/updatedAt`]: now,
       [`customers/${customer.id}/due`]: (data.customers[customer.id]?.due ?? 0) + due,
+    }
+
+    requestedByProduct.forEach((quantity, productId) => {
+      const product = data.products[productId]
+      const nextStock = product.stockQty - quantity
+      updates[`products/${product.id}/stockQty`] = nextStock
+      updates[`products/${product.id}/status`] = getProductStatus(nextStock, product.minStock)
+      updates[`products/${product.id}/updatedAt`] = now
     })
 
-    await writeActivity('order_created', 'sales', `Created order for ${customer.name} with ${input.quantity} x ${product.name}.`)
+    await update(ref(db, 'erp'), updates)
+
+    await writeActivity('order_created', 'sales', `Created order for ${customer.name} with ${orderItems.length} product line(s).`)
     await writeNotification(
       'New sales order',
       `Order ${orderId} created for ${customer.name} by ${currentUser?.name ?? 'Admin'}. Awaiting fulfillment.`,
@@ -877,7 +906,10 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       ['admin', 'sales_person', 'accountant']
     )
 
-    if (nextStock <= product.minStock) {
+    for (const [productId, quantity] of requestedByProduct) {
+      const product = data.products[productId]
+      const nextStock = product.stockQty - quantity
+      if (nextStock > product.minStock) continue
       await writeNotification(
         'Low stock alert',
         `${product.name} needs replenishment after the latest sale (${nextStock}/${product.minStock}).`,
@@ -1133,6 +1165,32 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     )
   }
 
+  async function saveInvestor(input: InvestorInput, investorId?: string) {
+    if (!data) return
+    const name = input.name.trim()
+    const mobile = input.mobile.trim()
+    if (!name) throw new Error('Investor name is required.')
+    if (!mobile) throw new Error('Investor mobile number is required.')
+    if (input.amount <= 0) throw new Error('Investment amount must be greater than zero.')
+
+    const existing = investorId ? data.investors[investorId] : null
+    const id = existing?.id ?? createId('investor')
+    const now = new Date().toISOString()
+    const investor = {
+      id,
+      name,
+      location: input.location?.trim() ?? '',
+      mobile,
+      products: input.products?.trim() ?? '',
+      amount: input.amount,
+      note: input.note?.trim() ?? '',
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    }
+    await update(ref(getDatabaseOrThrow(), 'erp/investors'), { [id]: investor })
+    await writeActivity(existing ? 'investor_updated' : 'investor_created', 'finance', `${existing ? 'Updated' : 'Added'} investor ${name}.`)
+  }
+
   async function deleteExpense(expenseId: string) {
     if (!data) {
       return
@@ -1378,6 +1436,7 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       markNotificationRead,
       markAllNotificationsRead,
       saveExpense,
+      saveInvestor,
       deleteExpense,
       saveSeller,
       deleteSeller,

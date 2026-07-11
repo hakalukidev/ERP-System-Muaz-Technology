@@ -10,6 +10,7 @@ import {
   Printer,
   ReceiptText,
   Search,
+  Trash2,
 } from 'lucide-react'
 
 import { AdminShell } from './AdminShell'
@@ -43,8 +44,8 @@ function defaultPaymentDueDate() {
 
 const emptyOrder = {
   customerId: '',
-  productId: '',
-  quantity: '1',
+  items: [{ productId: '', quantity: '1', unitPrice: '' }],
+  discount: '0',
   paid: '0',
   billNumber: '',
   orderDate: new Date().toISOString().slice(0, 10),
@@ -56,7 +57,7 @@ const emptyOrder = {
 type SalesDocument = Pick<
   OrderRecord,
   'id' | 'customerId' | 'customerName' | 'salesPersonName' | 'total' | 'paid' | 'due' | 'deliveryDate' | 'createdAt' | 'items'
->
+> & { subtotal?: number; discount?: number }
 
 type PaymentFilter = 'all' | 'paid' | 'partial' | 'unpaid'
 
@@ -99,6 +100,17 @@ export function SalesScreen() {
   const [quickCreateCustomerOpen, setQuickCreateCustomerOpen] = useState(false)
   const [quickCreateProductOpen, setQuickCreateProductOpen] = useState(false)
   const [pendingSearchText, setPendingSearchText] = useState('')
+  const selectedCustomer = useMemo(
+    () => customers.find((customer) => customer.id === orderForm.customerId),
+    [customers, orderForm.customerId]
+  )
+  const orderSubtotal = orderForm.items.reduce(
+    (sum, item) => sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
+    0
+  )
+  const orderDiscount = Math.min(Math.max(Number(orderForm.discount || 0), 0), orderSubtotal)
+  const orderTotal = orderSubtotal - orderDiscount
+  const orderDue = Math.max(orderTotal - Number(orderForm.paid || 0), 0)
 
   const customerOptions: ComboboxOption[] = useMemo(
     () =>
@@ -181,8 +193,12 @@ export function SalesScreen() {
     try {
       await createOrder({
         customerId: orderForm.customerId,
-        productId: orderForm.productId,
-        quantity: Number(orderForm.quantity),
+        items: orderForm.items.map((item) => ({
+          productId: item.productId,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice),
+        })),
+        discount: Number(orderForm.discount),
         paid: Number(orderForm.paid),
         billNumber: orderForm.billNumber,
         orderDate: orderForm.orderDate,
@@ -228,7 +244,8 @@ export function SalesScreen() {
           <title>${type} ${escapeHtml(document.id)}</title>
           <style>
             * { box-sizing: border-box; }
-            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 32px; }
+            @page { margin: 14mm 12mm; }
+            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 0; }
             .header { align-items: flex-start; border-bottom: 2px solid #111827; display: flex; justify-content: space-between; padding-bottom: 18px; }
             .brand h1 { font-size: 24px; margin: 0; }
             .brand p, .meta p, .party p { color: #4b5563; font-size: 13px; margin: 5px 0 0; }
@@ -246,10 +263,8 @@ export function SalesScreen() {
             .totals div { display: flex; justify-content: space-between; padding: 7px 0; }
             .totals .grand { border-top: 2px solid #111827; font-size: 18px; font-weight: 700; }
             .note { color: #4b5563; font-size: 12px; margin-top: 32px; }
-            @media print {
-              body { padding: 20px; }
-              button { display: none; }
-            }
+            @media screen { body { padding: 32px; } }
+            @media print { button { display: none; } }
           </style>
         </head>
         <body>
@@ -271,8 +286,8 @@ export function SalesScreen() {
               <h2>Bill To</h2>
               <p><strong>${escapeHtml(document.customerName)}</strong></p>
               <p>${escapeHtml(customer?.company ?? 'Retail')}</p>
-              <p>${escapeHtml(customer?.phone ?? '')}</p>
-              <p>${escapeHtml(customer?.location ?? '')}</p>
+              <p><strong>Mobile:</strong> ${escapeHtml(customer?.phone || 'N/A')}</p>
+              <p><strong>Location:</strong> ${escapeHtml(customer?.location || 'N/A')}</p>
             </div>
             <div class="party">
               <h2>Prepared By</h2>
@@ -295,9 +310,11 @@ export function SalesScreen() {
           </table>
 
           <div class="totals">
-            <div><span>Total</span><strong>${formatCurrency(document.total, currency)}</strong></div>
+            <div><span>Total amount</span><strong>${formatCurrency(document.subtotal ?? document.total, currency)}</strong></div>
+            <div><span>Discount</span><strong>${formatCurrency(document.discount ?? 0, currency)}</strong></div>
+            <div><span>Payable amount</span><strong>${formatCurrency(document.total, currency)}</strong></div>
             <div><span>Paid</span><strong>${formatCurrency(document.paid, currency)}</strong></div>
-            <div class="grand"><span>Due</span><strong>${formatCurrency(document.due, currency)}</strong></div>
+            <div class="grand"><span>Due amount</span><strong>${formatCurrency(document.due, currency)}</strong></div>
           </div>
 
           <p class="note">Use the print dialog's Save as PDF option to download this ${type.toLowerCase()}.</p>
@@ -329,34 +346,35 @@ export function SalesScreen() {
     setFeedback(null)
 
     const customer = customers.find((entry) => entry.id === orderForm.customerId)
-    const product = products.find((entry) => entry.id === orderForm.productId)
-    const quantity = Number(orderForm.quantity)
+    const quotationItems = orderForm.items.map((item) => {
+      const product = products.find((entry) => entry.id === item.productId)
+      return product ? { product, quantity: Number(item.quantity), unitPrice: Number(item.unitPrice) } : null
+    })
 
-    if (!customer || !product || quantity <= 0 || !orderForm.deliveryDate) {
+    if (!customer || quotationItems.some((item) => !item || item.quantity <= 0 || item.unitPrice < 0) || !orderForm.deliveryDate) {
       setFeedback('Select customer, product, quantity, and due date before printing a quotation.')
       return
     }
 
-    const total = product.sellingPrice * quantity
     printSalesDocument('Quotation', {
       id: `QT-${Date.now()}`,
       customerId: customer.id,
       customerName: customer.name,
       salesPersonName: 'Sales desk',
-      total,
-      paid: 0,
-      due: total,
+      subtotal: orderSubtotal,
+      discount: orderDiscount,
+      total: orderTotal,
+      paid: Number(orderForm.paid || 0),
+      due: orderDue,
       deliveryDate: orderForm.deliveryDate,
       createdAt: new Date().toISOString(),
-      items: [
-        {
-          productId: product.id,
-          productName: product.name,
-          quantity,
-          unitPrice: product.sellingPrice,
-          purchasePrice: product.purchasePrice,
-        },
-      ],
+      items: quotationItems.map((item) => ({
+        productId: item!.product.id,
+        productName: item!.product.name,
+        quantity: item!.quantity,
+        unitPrice: item!.unitPrice,
+        purchasePrice: item!.product.purchasePrice,
+      })),
     })
   }
 
@@ -603,7 +621,7 @@ export function SalesScreen() {
       </div>
 
       <Dialog open={newSaleOpen} onOpenChange={setNewSaleOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto sm:max-h-[calc(100dvh-3rem)]">
           <DialogHeader>
             <DialogTitle>Create new sale</DialogTitle>
             <DialogDescription>Save a sales order from the live inventory set, or print a quotation first.</DialogDescription>
@@ -628,65 +646,77 @@ export function SalesScreen() {
                   createNewLabel="Create customer"
                 />
               </div>
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-foreground">
-                  Product<span className="ml-0.5 text-rose-500">*</span>
-                </p>
-                <Combobox
-                  options={productOptions}
-                  value={orderForm.productId}
-                  onChange={(value) => setOrderForm((current) => ({ ...current, productId: value }))}
-                  placeholder="Select a product"
-                  searchPlaceholder="Search products..."
-                  onCreateNew={(typedText) => {
-                    setPendingSearchText(typedText)
-                    setQuickCreateProductOpen(true)
-                  }}
-                  createNewLabel="Create product"
-                />
-              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">
-                    Quantity<span className="ml-0.5 text-rose-500">*</span>
-                  </p>
-                  <Input type="number" min="1" value={orderForm.quantity} onChange={(event) => setOrderForm((current) => ({ ...current, quantity: event.target.value }))} required />
+                  <p className="text-sm font-medium text-foreground">Mobile number</p>
+                  <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm">
+                    {selectedCustomer?.phone || 'N/A'}
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">
-                    Delivery date<span className="ml-0.5 text-rose-500">*</span>
-                  </p>
-                  <Input type="date" value={orderForm.deliveryDate} onChange={(event) => setOrderForm((current) => ({ ...current, deliveryDate: event.target.value }))} required />
+                  <p className="text-sm font-medium text-foreground">Location</p>
+                  <div className="flex min-h-10 items-center rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {selectedCustomer?.location || 'N/A'}
+                  </div>
                 </div>
               </div>
-              {orderForm.productId ? (
-                (() => {
-                  const selectedProduct = products.find((product) => product.id === orderForm.productId)
-                  const quantity = Number(orderForm.quantity || 0)
-                  const total = (selectedProduct?.sellingPrice ?? 0) * quantity
-                  const paid = Number(orderForm.paid || 0)
-                  const due = Math.max(total - paid, 0)
-
-                  return (
-                    <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Order total</p>
-                          <p className="mt-1 text-lg font-semibold">{formatCurrency(total, data?.settings.currency)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Paid</p>
-                          <p className="mt-1 text-lg font-semibold">{formatCurrency(paid, data?.settings.currency)}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Due</p>
-                          <p className="mt-1 text-lg font-semibold">{formatCurrency(due, data?.settings.currency)}</p>
-                        </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-foreground">Products<span className="ml-0.5 text-rose-500">*</span></p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setOrderForm((current) => ({ ...current, items: [...current.items, { productId: '', quantity: '1', unitPrice: '' }] }))}
+                  >
+                    <Plus className="mr-1.5 h-4 w-4" /> Add product
+                  </Button>
+                </div>
+                {orderForm.items.map((item, index) => (
+                  <div key={index} className="space-y-3 rounded-xl border border-border/70 p-3">
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Combobox
+                          options={productOptions}
+                          value={item.productId}
+                          onChange={(value) => setOrderForm((current) => ({
+                            ...current,
+                            items: current.items.map((entry, itemIndex) => itemIndex === index
+                              ? { ...entry, productId: value, unitPrice: String(products.find((product) => product.id === value)?.sellingPrice ?? '') }
+                              : entry),
+                          }))}
+                          placeholder="Select a product"
+                          searchPlaceholder="Search products..."
+                          onCreateNew={(typedText) => {
+                            setPendingSearchText(typedText)
+                            setQuickCreateProductOpen(true)
+                          }}
+                          createNewLabel="Create product"
+                        />
+                      </div>
+                      {orderForm.items.length > 1 ? (
+                        <Button type="button" variant="outline" size="icon" onClick={() => setOrderForm((current) => ({ ...current, items: current.items.filter((_, itemIndex) => itemIndex !== index) }))} aria-label={`Remove product ${index + 1}`}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-foreground">Quantity<span className="ml-0.5 text-rose-500">*</span></p>
+                        <Input type="number" min="1" value={item.quantity} onChange={(event) => setOrderForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, quantity: event.target.value } : entry) }))} required />
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-foreground">Unit price<span className="ml-0.5 text-rose-500">*</span></p>
+                        <Input type="number" min="0" value={item.unitPrice} onChange={(event) => setOrderForm((current) => ({ ...current, items: current.items.map((entry, itemIndex) => itemIndex === index ? { ...entry, unitPrice: event.target.value } : entry) }))} placeholder="0" required />
                       </div>
                     </div>
-                  )
-                })()
-              ) : null}
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">Delivery date<span className="ml-0.5 text-rose-500">*</span></p>
+                <Input type="date" value={orderForm.deliveryDate} onChange={(event) => setOrderForm((current) => ({ ...current, deliveryDate: event.target.value }))} required />
+              </div>
             </div>
 
             <div className="space-y-4 rounded-2xl border border-border/70 p-4">
@@ -728,6 +758,28 @@ export function SalesScreen() {
                   </p>
                   <Input value={orderForm.billNumber} onChange={(event) => setOrderForm((current) => ({ ...current, billNumber: event.target.value }))} placeholder="Auto-generated if blank" />
                 </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Total amount</p>
+                  <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm">
+                    {formatCurrency(orderSubtotal, data?.settings.currency)}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Discount amount</p>
+                  <Input type="number" min="0" max={orderSubtotal} value={orderForm.discount} onChange={(event) => setOrderForm((current) => ({ ...current, discount: event.target.value }))} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Payable amount</p>
+                  <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm">
+                    {formatCurrency(orderTotal, data?.settings.currency)}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Due amount</p>
+                  <div className="flex h-10 items-center rounded-md border border-input bg-background px-3 text-sm">
+                    {formatCurrency(orderDue, data?.settings.currency)}
+                  </div>
+                </div>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -754,7 +806,12 @@ export function SalesScreen() {
         open={quickCreateProductOpen}
         onOpenChange={setQuickCreateProductOpen}
         initialName={pendingSearchText}
-        onCreated={(productId) => setOrderForm((current) => ({ ...current, productId }))}
+        onCreated={(productId) => setOrderForm((current) => ({
+          ...current,
+          items: current.items.map((item, index) => index === 0 && !item.productId
+            ? { ...item, productId, unitPrice: String(products.find((product) => product.id === productId)?.sellingPrice ?? '') }
+            : item),
+        }))}
       />
     </AdminShell>
   )

@@ -242,7 +242,8 @@ export default function FinancePage() {
           <title>Invoice ${escapeHtml(order.id)}</title>
           <style>
             * { box-sizing: border-box; }
-            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 32px; }
+            @page { margin: 14mm 12mm; }
+            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 0; }
             .header { border-bottom: 2px solid #111827; display: flex; justify-content: space-between; padding-bottom: 18px; }
             h1 { font-size: 24px; margin: 0; }
             p { color: #4b5563; font-size: 13px; margin: 5px 0 0; }
@@ -257,6 +258,7 @@ export default function FinancePage() {
             .totals { margin-left: auto; margin-top: 18px; width: 320px; }
             .totals div { display: flex; justify-content: space-between; padding: 7px 0; }
             .totals .grand { border-top: 2px solid #111827; font-size: 18px; font-weight: 700; }
+            @media screen { body { padding: 32px; } }
           </style>
         </head>
         <body>
@@ -276,8 +278,8 @@ export default function FinancePage() {
             <div class="box">
               <strong>Bill To</strong>
               <p>${escapeHtml(order.customerName)}</p>
-              <p>${escapeHtml(customer?.phone ?? '')}</p>
-              <p>${escapeHtml(customer?.location ?? '')}</p>
+              <p><strong>Mobile:</strong> ${escapeHtml(customer?.phone || 'N/A')}</p>
+              <p><strong>Location:</strong> ${escapeHtml(customer?.location || 'N/A')}</p>
             </div>
             <div class="box">
               <strong>Payment</strong>
@@ -290,9 +292,11 @@ export default function FinancePage() {
             <tbody>${rows}</tbody>
           </table>
           <div class="totals">
-            <div><span>Total</span><strong>${formatCurrency(order.total, currency)}</strong></div>
+            <div><span>Total amount</span><strong>${formatCurrency(order.subtotal ?? order.total, currency)}</strong></div>
+            <div><span>Discount</span><strong>${formatCurrency(order.discount ?? 0, currency)}</strong></div>
+            <div><span>Payable amount</span><strong>${formatCurrency(order.total, currency)}</strong></div>
             <div><span>Cash</span><strong>${formatCurrency(order.paid, currency)}</strong></div>
-            <div class="grand"><span>Due</span><strong>${formatCurrency(order.due, currency)}</strong></div>
+            <div class="grand"><span>Due amount</span><strong>${formatCurrency(order.due, currency)}</strong></div>
           </div>
           <script>
             window.addEventListener('load', () => {
