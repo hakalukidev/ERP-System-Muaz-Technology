@@ -119,7 +119,7 @@ export type OrderRecord = {
   due: number
   deliveryDate: string
   paymentDueDate: string
-  dueReference: 'owner' | 'courier' | ''
+  dueReference: 'owner' | 'courier' | 'bank' | 'bkash' | 'nagad' | 'dbbl' | ''
   overdueNotified?: boolean
   createdAt: string
   items: OrderItem[]

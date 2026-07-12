@@ -56,7 +56,7 @@ const emptyOrder = {
 
 type SalesDocument = Pick<
   OrderRecord,
-  'id' | 'customerId' | 'customerName' | 'salesPersonName' | 'total' | 'paid' | 'due' | 'deliveryDate' | 'createdAt' | 'items'
+  'id' | 'billNumber' | 'customerId' | 'customerName' | 'salesPersonName' | 'total' | 'paid' | 'due' | 'deliveryDate' | 'createdAt' | 'items'
 > & { subtotal?: number; discount?: number }
 
 type PaymentFilter = 'all' | 'paid' | 'partial' | 'unpaid'
@@ -219,6 +219,7 @@ export function SalesScreen() {
     const issueDate = formatDate(document.createdAt)
     const deliveryDate = formatDate(document.deliveryDate)
     const currency = data?.settings.currency
+    const invoiceNumber = (document.billNumber || document.id).replace(/\D/g, '').slice(-8).padStart(8, '0')
 
     const rows = document.items
       .map((item, index) => {
@@ -244,8 +245,8 @@ export function SalesScreen() {
           <title>${type} ${escapeHtml(document.id)}</title>
           <style>
             * { box-sizing: border-box; }
-            @page { margin: 14mm 12mm; }
-            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 0; }
+            @page { margin: 0; }
+            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 14mm 12mm 18mm; }
             .header { align-items: flex-start; border-bottom: 2px solid #111827; display: flex; justify-content: space-between; padding-bottom: 18px; }
             .brand h1 { font-size: 24px; margin: 0; }
             .brand p, .meta p, .party p { color: #4b5563; font-size: 13px; margin: 5px 0 0; }
@@ -262,8 +263,8 @@ export function SalesScreen() {
             .totals { margin-left: auto; margin-top: 18px; width: 320px; }
             .totals div { display: flex; justify-content: space-between; padding: 7px 0; }
             .totals .grand { border-top: 2px solid #111827; font-size: 18px; font-weight: 700; }
-            .note { color: #4b5563; font-size: 12px; margin-top: 32px; }
-            @media screen { body { padding: 32px; } }
+            .print-date { bottom: 8mm; color: #4b5563; font-size: 11px; position: fixed; right: 12mm; }
+            @media screen { body { padding: 32px; } .print-date { bottom: 20px; right: 32px; } }
             @media print { button { display: none; } }
           </style>
         </head>
@@ -272,10 +273,12 @@ export function SalesScreen() {
             <div class="brand">
               <h1>${escapeHtml(data?.settings.companyName ?? 'ERP')}</h1>
               <p>Sales & Billing</p>
+              <p>92, Wise Market, Nawabpur Road, Dhaka-1100</p>
+              <p>+88 01897914480-83</p>
             </div>
             <div class="meta">
               <p class="title">${type}</p>
-              <p><strong>No:</strong> ${escapeHtml(document.id)}</p>
+              <p><strong>No:</strong> ${invoiceNumber}</p>
               <p><strong>Issue:</strong> ${issueDate}</p>
               <p><strong>Due/Delivery:</strong> ${deliveryDate}</p>
             </div>
@@ -317,7 +320,7 @@ export function SalesScreen() {
             <div class="grand"><span>Due amount</span><strong>${formatCurrency(document.due, currency)}</strong></div>
           </div>
 
-          <p class="note">Use the print dialog's Save as PDF option to download this ${type.toLowerCase()}.</p>
+          <p class="print-date">${issueDate}</p>
           <script>
             window.addEventListener('load', () => {
               window.focus();
@@ -358,6 +361,7 @@ export function SalesScreen() {
 
     printSalesDocument('Quotation', {
       id: `QT-${Date.now()}`,
+      billNumber: `QT-${Date.now().toString().slice(-8)}`,
       customerId: customer.id,
       customerName: customer.name,
       salesPersonName: 'Sales desk',
@@ -749,6 +753,10 @@ export function SalesScreen() {
                     <SelectContent>
                       <SelectItem value="owner">Owner (collected directly)</SelectItem>
                       <SelectItem value="courier">Courier (COD on delivery)</SelectItem>
+                      <SelectItem value="bank">Bank account</SelectItem>
+                      <SelectItem value="bkash">bKash</SelectItem>
+                      <SelectItem value="nagad">Nagad</SelectItem>
+                      <SelectItem value="dbbl">DBBL</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

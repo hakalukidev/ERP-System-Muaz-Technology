@@ -220,6 +220,7 @@ export default function FinancePage() {
 
   function buildInvoiceHtml(order: OrderRecord) {
     const customer = customers.find((entry) => entry.id === order.customerId)
+    const invoiceNumber = (order.billNumber || order.id).replace(/\D/g, '').slice(-8).padStart(8, '0')
     const rows = order.items
       .map(
         (item, index) => `
@@ -242,8 +243,8 @@ export default function FinancePage() {
           <title>Invoice ${escapeHtml(order.id)}</title>
           <style>
             * { box-sizing: border-box; }
-            @page { margin: 14mm 12mm; }
-            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 0; }
+            @page { margin: 0; }
+            body { color: #111827; font-family: Arial, sans-serif; margin: 0; padding: 14mm 12mm 18mm; }
             .header { border-bottom: 2px solid #111827; display: flex; justify-content: space-between; padding-bottom: 18px; }
             h1 { font-size: 24px; margin: 0; }
             p { color: #4b5563; font-size: 13px; margin: 5px 0 0; }
@@ -258,7 +259,8 @@ export default function FinancePage() {
             .totals { margin-left: auto; margin-top: 18px; width: 320px; }
             .totals div { display: flex; justify-content: space-between; padding: 7px 0; }
             .totals .grand { border-top: 2px solid #111827; font-size: 18px; font-weight: 700; }
-            @media screen { body { padding: 32px; } }
+            .print-date { bottom: 8mm; color: #4b5563; font-size: 11px; position: fixed; right: 12mm; }
+            @media screen { body { padding: 32px; } .print-date { bottom: 20px; right: 32px; } }
           </style>
         </head>
         <body>
@@ -266,10 +268,12 @@ export default function FinancePage() {
             <div>
               <h1>${escapeHtml(data?.settings.companyName ?? 'ERP')}</h1>
               <p>Accounting & Finance</p>
+              <p>92, Wise Market, Nawabpur Road, Dhaka-1100</p>
+              <p>+88 01897914480-83</p>
             </div>
             <div>
               <p class="title">Invoice</p>
-              <p><strong>No:</strong> ${escapeHtml(order.id)}</p>
+              <p><strong>No:</strong> ${invoiceNumber}</p>
               <p><strong>Date:</strong> ${formatDate(order.createdAt)}</p>
               <p><strong>Due date:</strong> ${formatDate(order.deliveryDate)}</p>
             </div>
@@ -298,6 +302,7 @@ export default function FinancePage() {
             <div><span>Cash</span><strong>${formatCurrency(order.paid, currency)}</strong></div>
             <div class="grand"><span>Due amount</span><strong>${formatCurrency(order.due, currency)}</strong></div>
           </div>
+          <p class="print-date">${formatDate(order.createdAt)}</p>
           <script>
             window.addEventListener('load', () => {
               window.focus();
