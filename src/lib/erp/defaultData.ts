@@ -93,11 +93,11 @@ export function createDefaultERPData(): ERPData {
     users: {
       u_admin: {
         id: 'u_admin',
-        name: 'Robin',
-        loginId: 'robin',
-        email: 'robin@muazbd.com',
+        name: 'Muaz',
+        loginId: 'muazbd@technology',
+        email: 'muazbd@technology@local',
         phone: '01844902338',
-        password: '123456',
+        password: 'muaz@123#',
         roleId: 'admin',
         title: 'Operations Director',
         status: 'active',

@@ -13,8 +13,8 @@ import { useERP } from '@/lib/erp/provider'
 export function LoginScreen() {
   const router = useRouter()
   const { currentUser, loading, login } = useERP()
-  const [identifier, setIdentifier] = useState('01844902338')
-  const [password, setPassword] = useState('123456')
+  const [identifier, setIdentifier] = useState('')
+  const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -97,7 +97,7 @@ export function LoginScreen() {
                 <Input
                   value={identifier}
                   onChange={(event) => setIdentifier(event.target.value)}
-                  placeholder="01844902338"
+                  placeholder="Login ID or phone"
                   autoComplete="username"
                   className="h-11 rounded-xl"
                   required
@@ -127,12 +127,6 @@ export function LoginScreen() {
                 )}
               </Button>
             </form>
-
-            <div className="mt-8 border-t border-border/60 pt-6 text-sm leading-6 text-muted-foreground">
-              <p className="font-medium text-foreground">Demo admin account</p>
-              <p className="mt-1">Phone: 01844902338</p>
-              <p>Password: 123456</p>
-            </div>
           </section>
         </div>
 
