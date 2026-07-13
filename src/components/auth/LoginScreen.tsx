@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, LockKeyhole, Smartphone, Users } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, LockKeyhole, Smartphone, Users } from 'lucide-react'
 
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ export function LoginScreen() {
   const { currentUser, loading, login } = useERP()
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -106,15 +107,26 @@ export function LoginScreen() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Password</label>
-                <Input
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  type="password"
-                  placeholder="Password"
-                  autoComplete="current-password"
-                  className="h-11 rounded-xl"
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Password"
+                    autoComplete="current-password"
+                    className="h-11 rounded-xl pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               {error ? <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p> : null}
