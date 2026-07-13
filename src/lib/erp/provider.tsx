@@ -1093,6 +1093,41 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       'info',
       ['admin', 'sales_person', 'accountant']
     )
+
+    if (status === 'shipped') {
+      const hasCourier = Object.values(data.couriers).some(
+        (courier) => courier.orderId === order.id || courier.billNumber === order.billNumber
+      )
+
+      if (!hasCourier) {
+        const courierId = createId('courier')
+        const now = new Date().toISOString()
+        const courier: CourierRecord = {
+          id: courierId,
+          orderId: order.id,
+          customerId: order.customerId,
+          customerName: order.customerName,
+          billNumber: order.billNumber,
+          courierName: '',
+          productDescription: order.items.map((item) => `${item.productName} x${item.quantity}`).join(', '),
+          quantity: order.items.reduce((sum, item) => sum + item.quantity, 0),
+          codAmount: order.dueReference === 'courier' ? order.due : 0,
+          sentDate: now,
+          status: 'in-transit',
+          createdAt: now,
+          updatedAt: now,
+        }
+
+        await update(ref(db, 'erp/couriers'), { [courierId]: courier })
+        await writeActivity('courier_created', 'courier', `Auto-created courier shipment for order ${order.billNumber}.`)
+        await writeNotification(
+          'Shipment created',
+          `Order ${order.billNumber} was marked shipped — add the courier service to complete the shipment record.`,
+          'info',
+          ['admin', 'sales_person']
+        )
+      }
+    }
   }
 
   async function createTask(input: TaskInput) {
@@ -1493,6 +1528,7 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     const now = new Date().toISOString()
     const courier = {
       id,
+      orderId: input.orderId ?? existingCourier?.orderId ?? '',
       customerId: input.customerId ?? existingCourier?.customerId ?? '',
       customerName,
       billNumber: input.billNumber?.trim() || existingCourier?.billNumber || `SHP-${Date.now().toString().slice(-8)}`,

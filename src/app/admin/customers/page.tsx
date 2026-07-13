@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, type FormEvent } from 'react'
-import { BellRing, Check, Crown, Edit, MapPin, Phone, Plus, Search, Trash2, Wrench } from 'lucide-react'
+import { BellRing, Check, Crown, Edit, Eye, MapPin, Phone, Plus, Search, Trash2, Wrench } from 'lucide-react'
 
 import { AdminShell } from '@/components/admin/AdminShell'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -27,7 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useERP } from '@/lib/erp/provider'
 import type { CustomerInput, CustomerRecord } from '@/lib/erp/types'
-import { formatCurrency, formatDate, isPremiumCustomer, toArray } from '@/lib/erp/utils'
+import { formatCurrency, formatDate, getReadableOrderState, isPremiumCustomer, toArray } from '@/lib/erp/utils'
 import { cn } from '@/lib/utils'
 
 type CustomerFormState = {
@@ -104,6 +104,8 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null)
   const [customerForm, setCustomerForm] = useState<CustomerFormState>(emptyCustomerForm)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [detailsCustomer, setDetailsCustomer] = useState<CustomerRecord | null>(null)
+  const [historyRange, setHistoryRange] = useState<'30d' | 'all'>('30d')
 
   const customerRows = useMemo(() => {
     return customers
@@ -124,6 +126,35 @@ export default function CustomersPage() {
       })
       .sort((left, right) => right.purchaseTotal - left.purchaseTotal)
   }, [customers, orders])
+
+  const detailsOrders = useMemo(() => {
+    if (!detailsCustomer) return []
+
+    const customerOrders = orders
+      .filter((order) => order.customerId === detailsCustomer.id)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+
+    if (historyRange === 'all') return customerOrders
+
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 30)
+    return customerOrders.filter((order) => new Date(order.createdAt) >= cutoff)
+  }, [orders, detailsCustomer, historyRange])
+
+  const detailsProductSummary = useMemo(() => {
+    const totals = new Map<string, { productName: string; quantity: number; amount: number }>()
+
+    detailsOrders.forEach((order) => {
+      order.items.forEach((item) => {
+        const existing = totals.get(item.productId) ?? { productName: item.productName, quantity: 0, amount: 0 }
+        existing.quantity += item.quantity
+        existing.amount += item.quantity * item.unitPrice
+        totals.set(item.productId, existing)
+      })
+    })
+
+    return Array.from(totals.values()).sort((left, right) => right.amount - left.amount)
+  }, [detailsOrders])
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -465,6 +496,18 @@ export default function CustomersPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-9 w-9"
+                            onClick={() => {
+                              setDetailsCustomer(customer)
+                              setHistoryRange('30d')
+                            }}
+                            aria-label={`View purchase history for ${customer.name}`}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
                           <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => openEditDialog(customer)} aria-label={`Edit ${customer.name}`}>
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -641,6 +684,88 @@ export default function CustomersPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailsCustomer !== null} onOpenChange={(open) => !open && setDetailsCustomer(null)}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto sm:max-h-[calc(100dvh-3rem)]">
+          <DialogHeader>
+            <DialogTitle>{detailsCustomer?.name}&apos;s purchase history</DialogTitle>
+            <DialogDescription>
+              {detailsCustomer?.phone} · {detailsCustomer?.location || 'N/A'} · Customer since {detailsCustomer ? formatDate(detailsCustomer.createdAt) : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={historyRange === '30d' ? 'default' : 'outline'}
+              className="rounded-xl"
+              onClick={() => setHistoryRange('30d')}
+            >
+              Last 30 days
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={historyRange === 'all' ? 'default' : 'outline'}
+              className="rounded-xl"
+              onClick={() => setHistoryRange('all')}
+            >
+              All time
+            </Button>
+          </div>
+
+          {detailsProductSummary.length > 0 ? (
+            <div className="space-y-2 rounded-2xl border border-border/70 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Products taken {historyRange === '30d' ? 'in the last 30 days' : 'all time'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {detailsProductSummary.map((item) => (
+                  <Badge key={item.productName} variant="outline" className="font-normal">
+                    {item.productName} × {item.quantity}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            {detailsOrders.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
+                No purchases {historyRange === '30d' ? 'in the last 30 days' : 'on record'}.
+              </div>
+            ) : (
+              detailsOrders.map((order) => (
+                <div key={order.id} className="space-y-3 rounded-2xl border border-border/70 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold">{order.billNumber}</p>
+                      <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</p>
+                    </div>
+                    <Badge variant="outline" className="capitalize">{getReadableOrderState(order)}</Badge>
+                  </div>
+                  <div className="space-y-1.5">
+                    {order.items.map((item, index) => (
+                      <div key={`${order.id}-${item.productId}-${index}`} className="flex items-center justify-between text-sm">
+                        <span>{item.productName} × {item.quantity}</span>
+                        <span className="text-muted-foreground">{formatCurrency(item.quantity * item.unitPrice, currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border/70 pt-3 text-sm">
+                    <span>Total <strong>{formatCurrency(order.total, currency)}</strong></span>
+                    <span>Paid <strong>{formatCurrency(order.paid, currency)}</strong></span>
+                    <span className={cn(order.due > 0 ? 'text-rose-600 dark:text-rose-400' : '')}>
+                      Due <strong>{formatCurrency(order.due, currency)}</strong>
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </AdminShell>

@@ -294,7 +294,11 @@ export default function CourierUpdatePage() {
                       <TableCell className="min-w-36">
                         <div className="flex items-center gap-2">
                           <Truck className="h-4 w-4 text-muted-foreground" />
-                          <span>{courier.courierName}</span>
+                          {courier.courierName ? (
+                            <span>{courier.courierName}</span>
+                          ) : (
+                            <span className="italic text-amber-600 dark:text-amber-400">Not assigned yet</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="min-w-48 text-sm text-muted-foreground">

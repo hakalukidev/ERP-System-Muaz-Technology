@@ -221,6 +221,7 @@ export type CourierStatus = 'in-transit' | 'delivered' | 'returned' | 'cod-colle
 
 export type CourierRecord = {
   id: string
+  orderId?: string
   customerId?: string
   customerName: string
   billNumber: string
@@ -386,6 +387,7 @@ export type SellerTransactionInput = {
 }
 
 export type CourierInput = {
+  orderId?: string
   customerId?: string
   customerName: string
   billNumber?: string
