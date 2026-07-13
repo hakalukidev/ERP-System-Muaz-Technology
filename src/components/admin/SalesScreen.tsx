@@ -2,10 +2,12 @@
 
 import { useMemo, useState, type FormEvent } from 'react'
 import {
+  Ban,
   CalendarClock,
   ClipboardPlus,
   FileDown,
   FileSpreadsheet,
+  PencilLine,
   Plus,
   Printer,
   ReceiptText,
@@ -77,7 +79,7 @@ function paymentStatusOf(order: OrderRecord): PaymentFilter {
 }
 
 export function SalesScreen() {
-  const { data, hasPermission, createOrder, updateOrderStatus } = useERP()
+  const { data, hasPermission, createOrder, updateOrder, cancelOrder, updateOrderStatus } = useERP()
   const orders = useMemo(
     () => toArray(data?.orders).sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
     [data?.orders]
@@ -97,6 +99,7 @@ export function SalesScreen() {
   const [orderForm, setOrderForm] = useState(emptyOrder)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [newSaleOpen, setNewSaleOpen] = useState(false)
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null)
   const [quickCreateCustomerOpen, setQuickCreateCustomerOpen] = useState(false)
   const [quickCreateProductOpen, setQuickCreateProductOpen] = useState(false)
   const [pendingSearchText, setPendingSearchText] = useState('')
@@ -140,7 +143,7 @@ export function SalesScreen() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
 
-  const openOrders = orders.filter((order) => order.status !== 'completed').length
+  const openOrders = orders.filter((order) => order.status !== 'completed' && order.status !== 'cancelled').length
   const readyOrders = orders.filter((order) => order.status === 'ready').length
   const receivableTotal = orders.reduce((sum, order) => sum + order.due, 0)
   const supplierPayableEstimate = toArray(data?.purchases).reduce((sum, purchase) => sum + purchase.total, 0)
@@ -190,27 +193,70 @@ export function SalesScreen() {
     event.preventDefault()
     setFeedback(null)
 
+    const orderInput = {
+      customerId: orderForm.customerId,
+      items: orderForm.items.map((item) => ({
+        productId: item.productId,
+        quantity: Number(item.quantity),
+        unitPrice: Number(item.unitPrice),
+      })),
+      discount: Number(orderForm.discount),
+      paid: Number(orderForm.paid),
+      billNumber: orderForm.billNumber,
+      orderDate: orderForm.orderDate,
+      deliveryDate: orderForm.deliveryDate,
+      paymentDueDate: orderForm.paymentDueDate,
+      dueReference: orderForm.dueReference,
+    }
+
     try {
-      await createOrder({
-        customerId: orderForm.customerId,
-        items: orderForm.items.map((item) => ({
-          productId: item.productId,
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice),
-        })),
-        discount: Number(orderForm.discount),
-        paid: Number(orderForm.paid),
-        billNumber: orderForm.billNumber,
-        orderDate: orderForm.orderDate,
-        deliveryDate: orderForm.deliveryDate,
-        paymentDueDate: orderForm.paymentDueDate,
-        dueReference: orderForm.dueReference,
-      })
+      if (editingOrderId) {
+        await updateOrder(editingOrderId, orderInput)
+        setFeedback('Sales order updated and inventory adjusted in realtime.')
+      } else {
+        await createOrder(orderInput)
+        setFeedback('Sales order created and inventory updated in realtime.')
+      }
       setOrderForm({ ...emptyOrder, orderDate: new Date().toISOString().slice(0, 10), paymentDueDate: defaultPaymentDueDate() })
-      setFeedback('Sales order created and inventory updated in realtime.')
+      setEditingOrderId(null)
       setNewSaleOpen(false)
     } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : 'Unable to create order.')
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to save order.')
+    }
+  }
+
+  function openEditOrder(order: OrderRecord) {
+    setFeedback(null)
+    setEditingOrderId(order.id)
+    setOrderForm({
+      customerId: order.customerId,
+      items: order.items.map((item) => ({
+        productId: item.productId,
+        quantity: String(item.quantity),
+        unitPrice: String(item.unitPrice),
+      })),
+      discount: String(order.discount ?? 0),
+      paid: String(order.paid),
+      billNumber: order.billNumber,
+      orderDate: order.createdAt.slice(0, 10),
+      deliveryDate: order.deliveryDate.slice(0, 10),
+      paymentDueDate: order.paymentDueDate.slice(0, 10),
+      dueReference: order.dueReference,
+    })
+    setNewSaleOpen(true)
+  }
+
+  async function handleCancelOrder(order: OrderRecord) {
+    if (!window.confirm(`Cancel order ${order.billNumber}? Stock will be returned to inventory and the customer's due will be adjusted.`)) {
+      return
+    }
+
+    setFeedback(null)
+    try {
+      await cancelOrder(order.id)
+      setFeedback(`Order ${order.billNumber} cancelled and stock returned to inventory.`)
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : 'Unable to cancel order.')
     }
   }
 
@@ -467,7 +513,14 @@ export function SalesScreen() {
                 Export data
               </Button>
               {hasPermission('manage_orders') ? (
-                <Button className="rounded-xl" onClick={() => setNewSaleOpen(true)}>
+                <Button
+                  className="rounded-xl"
+                  onClick={() => {
+                    setEditingOrderId(null)
+                    setOrderForm({ ...emptyOrder, orderDate: new Date().toISOString().slice(0, 10), paymentDueDate: defaultPaymentDueDate() })
+                    setNewSaleOpen(true)
+                  }}
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   New sale
                 </Button>
@@ -496,6 +549,7 @@ export function SalesScreen() {
                   <SelectItem value="shipped">Shipped</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="hold">Hold</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={paymentFilter} onValueChange={(value) => setPaymentFilter(value as PaymentFilter)}>
@@ -578,7 +632,9 @@ export function SalesScreen() {
                         ) : null}
                       </TableCell>
                       <TableCell>
-                        {hasPermission('manage_orders') ? (
+                        {order.status === 'cancelled' ? (
+                          <Badge variant="outline" className="border-rose-500/40 text-rose-600 dark:text-rose-400">Cancelled</Badge>
+                        ) : hasPermission('manage_orders') ? (
                           <Select value={order.status} onValueChange={(value) => void updateOrderStatus(order.id, value as typeof order.status)}>
                             <SelectTrigger className="w-40">
                               <SelectValue />
@@ -598,6 +654,16 @@ export function SalesScreen() {
                       <TableCell>{formatDate(order.deliveryDate)}</TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">
+                          {hasPermission('manage_orders') && order.status === 'pending' ? (
+                            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => openEditOrder(order)} aria-label={`Edit order ${order.billNumber}`}>
+                              <PencilLine className="h-4 w-4" />
+                            </Button>
+                          ) : null}
+                          {hasPermission('manage_orders') && order.status !== 'cancelled' ? (
+                            <Button variant="outline" size="icon" className="h-9 w-9 text-rose-600 hover:text-rose-600 dark:text-rose-400" onClick={() => void handleCancelOrder(order)} aria-label={`Cancel order ${order.billNumber}`}>
+                              <Ban className="h-4 w-4" />
+                            </Button>
+                          ) : null}
                           <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => printSalesDocument('Invoice', order)} aria-label={`Print invoice ${order.id}`}>
                             <Printer className="h-4 w-4" />
                           </Button>
@@ -624,11 +690,23 @@ export function SalesScreen() {
        
       </div>
 
-      <Dialog open={newSaleOpen} onOpenChange={setNewSaleOpen}>
+      <Dialog
+        open={newSaleOpen}
+        onOpenChange={(open) => {
+          setNewSaleOpen(open)
+          if (!open) {
+            setEditingOrderId(null)
+          }
+        }}
+      >
         <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto sm:max-h-[calc(100dvh-3rem)]">
           <DialogHeader>
-            <DialogTitle>Create new sale</DialogTitle>
-            <DialogDescription>Save a sales order from the live inventory set, or print a quotation first.</DialogDescription>
+            <DialogTitle>{editingOrderId ? 'Edit sale' : 'Create new sale'}</DialogTitle>
+            <DialogDescription>
+              {editingOrderId
+                ? 'Update this pending order. Stock and customer due will be recalculated automatically.'
+                : 'Save a sales order from the live inventory set, or print a quotation first.'}
+            </DialogDescription>
           </DialogHeader>
           <form className="space-y-5" onSubmit={handleOrderSubmit}>
             <div className="space-y-4 rounded-2xl border border-border/70 p-4">
@@ -797,7 +875,7 @@ export function SalesScreen() {
               </Button>
               <Button type="submit" className="rounded-xl">
                 <ClipboardPlus className="mr-2 h-4 w-4" />
-                Save order
+                {editingOrderId ? 'Update order' : 'Save order'}
               </Button>
             </div>
           </form>

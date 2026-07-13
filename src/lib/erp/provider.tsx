@@ -69,6 +69,8 @@ type ERPContextValue = {
   deleteWarehouse: (warehouseId: string) => Promise<void>
   recordPurchase: (input: PurchaseInput) => Promise<void>
   createOrder: (input: OrderInput) => Promise<void>
+  updateOrder: (orderId: string, input: OrderInput) => Promise<void>
+  cancelOrder: (orderId: string) => Promise<void>
   updateOrderStatus: (orderId: string, status: OrderRecord['status']) => Promise<void>
   createTask: (input: TaskInput) => Promise<void>
   updateTaskStatus: (taskId: string, status: TaskRecord['status']) => Promise<void>
@@ -919,6 +921,159 @@ export function ERPProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function updateOrder(orderId: string, input: OrderInput) {
+    if (!data || !currentUser) {
+      return
+    }
+
+    const db = getDatabaseOrThrow()
+    const order = data.orders[orderId]
+    if (!order) {
+      throw new Error('Order not found.')
+    }
+
+    if (order.status !== 'pending') {
+      throw new Error('Only pending orders can be edited. Cancel and reissue instead.')
+    }
+
+    const customer = data.customers[input.customerId]
+    if (!customer) {
+      throw new Error('Customer not found.')
+    }
+
+    if (!input.items.length) {
+      throw new Error('Add at least one product.')
+    }
+
+    const previousByProduct = new Map<string, number>()
+    order.items.forEach((item) => {
+      previousByProduct.set(item.productId, (previousByProduct.get(item.productId) ?? 0) + item.quantity)
+    })
+
+    const requestedByProduct = new Map<string, number>()
+    const orderItems = input.items.map((item) => {
+      const product = data.products[item.productId]
+      if (!product) throw new Error('Product not found.')
+      if (item.quantity <= 0) throw new Error(`Quantity for ${product.name} must be greater than zero.`)
+      if (item.unitPrice < 0) throw new Error(`Price for ${product.name} cannot be negative.`)
+      requestedByProduct.set(product.id, (requestedByProduct.get(product.id) ?? 0) + item.quantity)
+      return {
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        purchasePrice: product.purchasePrice,
+      }
+    })
+
+    const affectedProductIds = new Set([...previousByProduct.keys(), ...requestedByProduct.keys()])
+    affectedProductIds.forEach((productId) => {
+      const product = data.products[productId]
+      const available = product.stockQty + (previousByProduct.get(productId) ?? 0)
+      const requested = requestedByProduct.get(productId) ?? 0
+      if (available < requested) throw new Error(`Insufficient stock for ${product.name}.`)
+    })
+
+    const subtotal = orderItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+    const discount = Math.min(Math.max(input.discount ?? 0, 0), subtotal)
+    const total = subtotal - discount
+    if (input.paid < 0) {
+      throw new Error('Paid amount cannot be negative.')
+    }
+
+    const paid = Math.min(Math.max(input.paid, 0), total)
+    const due = total - paid
+    const now = new Date().toISOString()
+
+    const updates: Record<string, unknown> = {
+      [`orders/${orderId}/billNumber`]: input.billNumber?.trim() || order.billNumber,
+      [`orders/${orderId}/customerId`]: customer.id,
+      [`orders/${orderId}/customerName`]: customer.name,
+      [`orders/${orderId}/paymentStatus`]: due === 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid',
+      [`orders/${orderId}/total`]: total,
+      [`orders/${orderId}/subtotal`]: subtotal,
+      [`orders/${orderId}/discount`]: discount,
+      [`orders/${orderId}/paid`]: paid,
+      [`orders/${orderId}/due`]: due,
+      [`orders/${orderId}/deliveryDate`]: input.deliveryDate,
+      [`orders/${orderId}/paymentDueDate`]: input.paymentDueDate?.trim() || order.paymentDueDate,
+      [`orders/${orderId}/dueReference`]: due > 0 ? input.dueReference || 'owner' : '',
+      [`orders/${orderId}/items`]: orderItems,
+    }
+
+    if (customer.id === order.customerId) {
+      updates[`customers/${customer.id}/due`] = (data.customers[customer.id]?.due ?? 0) - order.due + due
+    } else {
+      updates[`customers/${order.customerId}/due`] = (data.customers[order.customerId]?.due ?? 0) - order.due
+      updates[`customers/${customer.id}/due`] = (data.customers[customer.id]?.due ?? 0) + due
+    }
+
+    affectedProductIds.forEach((productId) => {
+      const product = data.products[productId]
+      const nextStock = product.stockQty + (previousByProduct.get(productId) ?? 0) - (requestedByProduct.get(productId) ?? 0)
+      updates[`products/${product.id}/stockQty`] = nextStock
+      updates[`products/${product.id}/status`] = getProductStatus(nextStock, product.minStock)
+      updates[`products/${product.id}/updatedAt`] = now
+    })
+
+    await update(ref(db, 'erp'), updates)
+
+    await writeActivity('order_updated', 'sales', `Edited order ${order.billNumber} for ${customer.name}.`)
+    await writeNotification(
+      'Sales order edited',
+      `Order ${order.billNumber} was edited by ${currentUser?.name ?? 'Admin'}.`,
+      'info',
+      ['admin', 'sales_person', 'accountant']
+    )
+  }
+
+  async function cancelOrder(orderId: string) {
+    if (!data || !currentUser) {
+      return
+    }
+
+    const db = getDatabaseOrThrow()
+    const order = data.orders[orderId]
+    if (!order) {
+      throw new Error('Order not found.')
+    }
+
+    if (order.status === 'cancelled') {
+      return
+    }
+
+    const now = new Date().toISOString()
+    const updates: Record<string, unknown> = {
+      [`orders/${orderId}/status`]: 'cancelled',
+      [`orders/${orderId}/due`]: 0,
+      [`customers/${order.customerId}/due`]: Math.max((data.customers[order.customerId]?.due ?? 0) - order.due, 0),
+    }
+
+    const returnedByProduct = new Map<string, number>()
+    order.items.forEach((item) => {
+      returnedByProduct.set(item.productId, (returnedByProduct.get(item.productId) ?? 0) + item.quantity)
+    })
+
+    returnedByProduct.forEach((quantity, productId) => {
+      const product = data.products[productId]
+      if (!product) return
+      const nextStock = product.stockQty + quantity
+      updates[`products/${product.id}/stockQty`] = nextStock
+      updates[`products/${product.id}/status`] = getProductStatus(nextStock, product.minStock)
+      updates[`products/${product.id}/updatedAt`] = now
+    })
+
+    await update(ref(db, 'erp'), updates)
+
+    await writeActivity('order_cancelled', 'sales', `Cancelled order ${order.billNumber} for ${order.customerName}.`)
+    await writeNotification(
+      'Sales order cancelled',
+      `Order ${order.billNumber} was cancelled by ${currentUser?.name ?? 'Admin'}. Stock has been returned.`,
+      'warning',
+      ['admin', 'sales_person', 'accountant']
+    )
+  }
+
   async function updateOrderStatus(orderId: string, status: OrderRecord['status']) {
     if (!data) {
       return
@@ -1430,6 +1585,8 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       deleteWarehouse,
       recordPurchase,
       createOrder,
+      updateOrder,
+      cancelOrder,
       updateOrderStatus,
       createTask,
       updateTaskStatus,

@@ -92,7 +92,7 @@ export type ProductRecord = {
   updatedAt: string
 }
 
-export type OrderStatus = 'pending' | 'ready' | 'shipped' | 'completed' | 'hold'
+export type OrderStatus = 'pending' | 'ready' | 'shipped' | 'completed' | 'hold' | 'cancelled'
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid'
 
 export type OrderItem = {
