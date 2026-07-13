@@ -38,6 +38,15 @@ import { formatCurrency, formatDateTime, getProductStatus, toArray } from '@/lib
 const SUPPLIER_NONE = '__none__'
 const currencyOptions = ['BDT', 'USD', 'CNY', 'EUR']
 
+function statValueFontSizeClass(value: string) {
+  const length = value.length
+  if (length <= 6) return 'text-2xl md:text-3xl'
+  if (length <= 9) return 'text-xl md:text-2xl'
+  if (length <= 13) return 'text-lg md:text-xl'
+  if (length <= 17) return 'text-base md:text-lg'
+  return 'text-sm md:text-base'
+}
+
 type ProductFormState = {
   name: string
   sku: string
@@ -611,13 +620,20 @@ export function StockOverviewScreen() {
                 </Button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Products</p><p className="mt-1 text-2xl font-semibold tracking-tight">{products.length}</p></div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Units in stock</p><p className="mt-1 text-2xl font-semibold tracking-tight">{totalUnits}</p></div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Inventory value</p><p className="mt-1 text-2xl font-semibold tracking-tight">{formatCurrency(totalInventoryValue, currency)}</p></div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Low stock</p><p className="mt-1 text-2xl font-semibold tracking-tight">{lowStockProducts.length}</p></div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Warehouses</p><p className="mt-1 text-2xl font-semibold tracking-tight">{warehouses.length}</p></div>
-              <div className="rounded-2xl border border-border/70 bg-card px-4 py-4"><p className="text-sm text-muted-foreground">Suppliers</p><p className="mt-1 text-2xl font-semibold tracking-tight">{suppliers.length}</p></div>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+              {[
+                { label: 'Products', value: String(products.length) },
+                { label: 'Units in stock', value: String(totalUnits) },
+                { label: 'Inventory value', value: formatCurrency(totalInventoryValue, currency) },
+                { label: 'Low stock', value: String(lowStockProducts.length) },
+                { label: 'Warehouses', value: String(warehouses.length) },
+                { label: 'Suppliers', value: String(suppliers.length) },
+              ].map((stat) => (
+                <div key={stat.label} className="min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card px-4 py-4">
+                  <p className="text-sm text-muted-foreground">{stat.label}</p>
+                  <p className={`mt-1 truncate font-semibold tracking-tight ${statValueFontSizeClass(stat.value)}`}>{stat.value}</p>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
