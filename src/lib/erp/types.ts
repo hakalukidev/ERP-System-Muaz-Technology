@@ -208,9 +208,12 @@ export type SellerTransactionRecord = {
   sellerId: string
   sellerName: string
   date: string
-  itemsTaken: string
+  productName: string
+  quantity: number
   takenValue: number
   cashGiven: number
+  givenValue: number
+  cashReceived: number
   goodsBroughtDescription: string
   iReceiveAmount: number
   theyReceiveAmount: number
@@ -378,9 +381,12 @@ export type SellerInput = {
 export type SellerTransactionInput = {
   sellerId: string
   date?: string
-  itemsTaken?: string
+  productName?: string
+  quantity?: number
   takenValue?: number
   cashGiven?: number
+  givenValue?: number
+  cashReceived?: number
   goodsBroughtDescription?: string
   iReceiveAmount?: number
   theyReceiveAmount?: number

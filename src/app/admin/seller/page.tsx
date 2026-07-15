@@ -33,24 +33,26 @@ const emptySellerForm: SellerFormState = { name: '', phone: '', location: '', no
 type TransactionFormState = {
   sellerId: string
   date: string
-  itemsTaken: string
+  productName: string
+  quantity: string
   takenValue: string
   cashGiven: string
+  givenValue: string
+  cashReceived: string
   goodsBroughtDescription: string
-  iReceiveAmount: string
-  theyReceiveAmount: string
 }
 
 function emptyTransactionForm(sellerId: string): TransactionFormState {
   return {
     sellerId,
     date: new Date().toISOString().slice(0, 10),
-    itemsTaken: '',
+    productName: '',
+    quantity: '',
     takenValue: '0',
     cashGiven: '0',
+    givenValue: '0',
+    cashReceived: '0',
     goodsBroughtDescription: '',
-    iReceiveAmount: '0',
-    theyReceiveAmount: '0',
   }
 }
 
@@ -83,8 +85,14 @@ export default function SellerListPage() {
         const sellerTransactions = transactions
           .filter((txn) => txn.sellerId === seller.id)
           .sort((left, right) => right.date.localeCompare(left.date))
-        const owedToMe = sellerTransactions.reduce((sum, txn) => sum + txn.iReceiveAmount, 0)
-        const owedByMe = sellerTransactions.reduce((sum, txn) => sum + txn.theyReceiveAmount, 0)
+        // Net taken-vs-given across every entry first, then split into a single
+        // receivable/payable figure so entries can't inflate both sides at once.
+        const netBalance = sellerTransactions.reduce(
+          (sum, txn) => sum + txn.theyReceiveAmount - txn.iReceiveAmount,
+          0
+        )
+        const owedToMe = netBalance < 0 ? Math.abs(netBalance) : 0
+        const owedByMe = netBalance > 0 ? netBalance : 0
 
         return { seller, sellerTransactions, owedToMe, owedByMe, hasTransactions: sellerTransactions.length > 0 }
       })
@@ -109,12 +117,15 @@ export default function SellerListPage() {
     }
   }, [sellerRows, sellers.length, transactions.length])
 
+  const filteredSellerIds = useMemo(() => new Set(filteredRows.map((row) => row.seller.id)), [filteredRows])
+
   const ledgerRows = useMemo(() => {
     return transactions
       .slice()
       .sort((left, right) => right.date.localeCompare(left.date))
       .map((txn, index) => ({ serial: transactions.length - index, txn }))
-  }, [transactions])
+      .filter(({ txn }) => filteredSellerIds.has(txn.sellerId))
+  }, [transactions, filteredSellerIds])
 
   function openCreateDialog() {
     setEditingSeller(null)
@@ -173,15 +184,27 @@ export default function SellerListPage() {
     event.preventDefault()
     setFeedback(null)
 
+    // Net effect (positive = we owe them, negative = they owe us): goods we
+    // took from them or cash they paid us push it toward "we owe them"; cash
+    // we paid them or goods we gave them pull it toward "they owe us".
+    const net =
+      Number(txnForm.takenValue || 0) -
+      Number(txnForm.cashGiven || 0) -
+      Number(txnForm.givenValue || 0) +
+      Number(txnForm.cashReceived || 0)
+
     const input: SellerTransactionInput = {
       sellerId: txnForm.sellerId,
       date: txnForm.date,
-      itemsTaken: txnForm.itemsTaken,
+      productName: txnForm.productName,
+      quantity: Number(txnForm.quantity || 0),
       takenValue: Number(txnForm.takenValue),
       cashGiven: Number(txnForm.cashGiven),
+      givenValue: Number(txnForm.givenValue),
+      cashReceived: Number(txnForm.cashReceived),
       goodsBroughtDescription: txnForm.goodsBroughtDescription,
-      iReceiveAmount: Number(txnForm.iReceiveAmount),
-      theyReceiveAmount: Number(txnForm.theyReceiveAmount),
+      iReceiveAmount: net < 0 ? Math.abs(net) : 0,
+      theyReceiveAmount: net > 0 ? net : 0,
     }
 
     try {
@@ -208,14 +231,31 @@ export default function SellerListPage() {
     void exportXlsx(
       'seller-ledger.xlsx',
       'Seller Ledger',
-      ['Serial', 'Date', 'Seller', 'Phone', 'Taken', 'Given', 'I receive', 'They receive'],
+      [
+        'Serial',
+        'Date',
+        'Seller',
+        'Phone',
+        'Product',
+        'Quantity',
+        'Taken',
+        'Cash given',
+        'Goods given',
+        'Cash received',
+        'I receive',
+        'They receive',
+      ],
       ledgerRows.map(({ serial, txn }) => [
         serial,
         formatDate(txn.date),
         txn.sellerName,
         sellers.find((seller) => seller.id === txn.sellerId)?.phone ?? '',
+        txn.productName,
+        txn.quantity,
         txn.takenValue,
         txn.cashGiven,
+        txn.givenValue,
+        txn.cashReceived,
         txn.iReceiveAmount,
         txn.theyReceiveAmount,
       ])
@@ -226,13 +266,29 @@ export default function SellerListPage() {
     void exportPdf(
       'seller-ledger.pdf',
       'Seller Ledger',
-      ['Serial', 'Date', 'Seller', 'Taken', 'Given', 'I receive', 'They receive'],
+      [
+        'Serial',
+        'Date',
+        'Seller',
+        'Product',
+        'Quantity',
+        'Taken',
+        'Cash given',
+        'Goods given',
+        'Cash received',
+        'I receive',
+        'They receive',
+      ],
       ledgerRows.map(({ serial, txn }) => [
         serial,
         formatDate(txn.date),
         txn.sellerName,
+        txn.productName,
+        txn.quantity,
         txn.takenValue,
         txn.cashGiven,
+        txn.givenValue,
+        txn.cashReceived,
         txn.iReceiveAmount,
         txn.theyReceiveAmount,
       ])
@@ -386,8 +442,10 @@ export default function SellerListPage() {
                     <TableHead>Serial</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Seller</TableHead>
-                    <TableHead>Taken</TableHead>
-                    <TableHead>Given</TableHead>
+                    <TableHead>Taken (I taken)</TableHead>
+                    <TableHead>Cash given (I given)</TableHead>
+                    <TableHead>Goods given</TableHead>
+                    <TableHead>Cash received</TableHead>
                     <TableHead>I receive</TableHead>
                     <TableHead>They receive</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -405,10 +463,12 @@ export default function SellerListPage() {
                       <TableCell>{formatDate(txn.date)}</TableCell>
                       <TableCell className="min-w-40">{txn.sellerName}</TableCell>
                       <TableCell className="min-w-48 text-xs text-muted-foreground">
-                        {txn.itemsTaken || '-'}
+                        {txn.productName ? `${txn.quantity ? `${txn.quantity} x ` : ''}${txn.productName}` : '-'}
                         {txn.takenValue ? <p className="font-medium text-foreground">{formatCurrency(txn.takenValue, currency)}</p> : null}
                       </TableCell>
                       <TableCell>{formatCurrency(txn.cashGiven, currency)}</TableCell>
+                      <TableCell>{formatCurrency(txn.givenValue, currency)}</TableCell>
+                      <TableCell>{formatCurrency(txn.cashReceived, currency)}</TableCell>
                       <TableCell>{formatCurrency(txn.iReceiveAmount, currency)}</TableCell>
                       <TableCell>{formatCurrency(txn.theyReceiveAmount, currency)}</TableCell>
                       <TableCell>
@@ -428,7 +488,7 @@ export default function SellerListPage() {
                   ))}
                   {ledgerRows.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="h-28 text-center text-muted-foreground">
                         No ledger entries yet.
                       </TableCell>
                     </TableRow>
@@ -508,35 +568,67 @@ export default function SellerListPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add ledger entry</DialogTitle>
-            <DialogDescription>Record what was taken, given, and the resulting balances.</DialogDescription>
+            <DialogDescription>
+              Works both ways — record what you took from them or gave them, in goods or cash, and the balance
+              updates itself.
+            </DialogDescription>
           </DialogHeader>
           <form className="space-y-5" onSubmit={handleTransactionSubmit}>
-            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Goods</p>
-              <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Date<span className="ml-0.5 text-rose-500">*</span>
+                </p>
+                <Input
+                  type="date"
+                  value={txnForm.date}
+                  onChange={(event) => setTxnForm((current) => ({ ...current, date: event.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Product name <span className="font-normal text-muted-foreground">(optional)</span>
+                </p>
+                <Input
+                  value={txnForm.productName}
+                  onChange={(event) => setTxnForm((current) => ({ ...current, productName: event.target.value }))}
+                  placeholder="e.g. Polo Shirt"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Quantity <span className="font-normal text-muted-foreground">(optional)</span>
+                </p>
+                <Input
+                  type="number"
+                  min="0"
+                  value={txnForm.quantity}
+                  onChange={(event) => setTxnForm((current) => ({ ...current, quantity: event.target.value }))}
+                  placeholder="e.g. 10"
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Goods returned by seller <span className="font-normal text-muted-foreground">(optional)</span>
+                </p>
+                <Input
+                  value={txnForm.goodsBroughtDescription}
+                  onChange={(event) =>
+                    setTxnForm((current) => ({ ...current, goodsBroughtDescription: event.target.value }))
+                  }
+                  placeholder="e.g. 2 x Polo Shirt returned unsold"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  From them to us (they&apos;re the supplier)
+                </p>
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">
-                    Date<span className="ml-0.5 text-rose-500">*</span>
-                  </p>
-                  <Input
-                    type="date"
-                    value={txnForm.date}
-                    onChange={(event) => setTxnForm((current) => ({ ...current, date: event.target.value }))}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">
-                    Products taken <span className="font-normal text-muted-foreground">(optional)</span>
-                  </p>
-                  <Input
-                    value={txnForm.itemsTaken}
-                    onChange={(event) => setTxnForm((current) => ({ ...current, itemsTaken: event.target.value }))}
-                    placeholder="e.g. 10 x Polo Shirt"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">Value of goods taken ({currency ?? 'BDT'})</p>
+                  <p className="text-sm font-medium text-foreground">Value of goods taken — I taken ({currency ?? 'BDT'})</p>
                   <Input
                     type="number"
                     min="0"
@@ -544,27 +636,10 @@ export default function SellerListPage() {
                     onChange={(event) => setTxnForm((current) => ({ ...current, takenValue: event.target.value }))}
                     placeholder="0"
                   />
+                  <p className="text-xs text-muted-foreground">Adds to the balance you owe the seller.</p>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">
-                    Goods returned by seller <span className="font-normal text-muted-foreground">(optional)</span>
-                  </p>
-                  <Input
-                    value={txnForm.goodsBroughtDescription}
-                    onChange={(event) =>
-                      setTxnForm((current) => ({ ...current, goodsBroughtDescription: event.target.value }))
-                    }
-                    placeholder="e.g. 2 x Polo Shirt returned unsold"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Money settlement</p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">Cash given to seller ({currency ?? 'BDT'})</p>
+                  <p className="text-sm font-medium text-foreground">Cash given to seller — I given ({currency ?? 'BDT'})</p>
                   <Input
                     type="number"
                     min="0"
@@ -572,45 +647,56 @@ export default function SellerListPage() {
                     onChange={(event) => setTxnForm((current) => ({ ...current, cashGiven: event.target.value }))}
                     placeholder="0"
                   />
+                  <p className="text-xs text-muted-foreground">Pays down the balance you owe the seller.</p>
                 </div>
-                <div />
+              </div>
+
+              <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  From us to them (they&apos;re our dealer)
+                </p>
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">Seller owes us ({currency ?? 'BDT'})</p>
+                  <p className="text-sm font-medium text-foreground">Value of goods given ({currency ?? 'BDT'})</p>
                   <Input
                     type="number"
                     min="0"
-                    value={txnForm.iReceiveAmount}
-                    onChange={(event) => setTxnForm((current) => ({ ...current, iReceiveAmount: event.target.value }))}
+                    value={txnForm.givenValue}
+                    onChange={(event) => setTxnForm((current) => ({ ...current, givenValue: event.target.value }))}
                     placeholder="0"
                   />
                   <p className="text-xs text-muted-foreground">Adds to the balance the seller owes you.</p>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-foreground">We owe seller ({currency ?? 'BDT'})</p>
+                  <p className="text-sm font-medium text-foreground">Cash received from seller ({currency ?? 'BDT'})</p>
                   <Input
                     type="number"
                     min="0"
-                    value={txnForm.theyReceiveAmount}
-                    onChange={(event) => setTxnForm((current) => ({ ...current, theyReceiveAmount: event.target.value }))}
+                    value={txnForm.cashReceived}
+                    onChange={(event) => setTxnForm((current) => ({ ...current, cashReceived: event.target.value }))}
                     placeholder="0"
                   />
-                  <p className="text-xs text-muted-foreground">Adds to the balance you owe the seller.</p>
+                  <p className="text-xs text-muted-foreground">Pays down the balance the seller owes you.</p>
                 </div>
               </div>
-              <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm">
-                <span className="text-muted-foreground">Net effect of this entry: </span>
-                {(() => {
-                  const net = Number(txnForm.iReceiveAmount || 0) - Number(txnForm.theyReceiveAmount || 0)
-                  if (net === 0) return <span className="font-medium">No change to balance</span>
-                  return (
-                    <span className="font-medium">
-                      {net > 0
-                        ? `Seller will owe you ${formatCurrency(net, currency)} more`
-                        : `You will owe the seller ${formatCurrency(Math.abs(net), currency)} more`}
-                    </span>
-                  )
-                })()}
-              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/30 p-3 text-sm">
+              <span className="text-muted-foreground">Net effect of this entry: </span>
+              {(() => {
+                const net =
+                  Number(txnForm.takenValue || 0) -
+                  Number(txnForm.cashGiven || 0) -
+                  Number(txnForm.givenValue || 0) +
+                  Number(txnForm.cashReceived || 0)
+                if (net === 0) return <span className="font-medium">No change to balance</span>
+                return (
+                  <span className="font-medium">
+                    {net > 0
+                      ? `You will owe the seller ${formatCurrency(net, currency)} more`
+                      : `Seller will owe you ${formatCurrency(Math.abs(net), currency)} more`}
+                  </span>
+                )
+              })()}
             </div>
             <div className="flex justify-end gap-3">
               <Button type="button" variant="outline" className="rounded-xl" onClick={() => setTxnDialogOpen(false)}>
