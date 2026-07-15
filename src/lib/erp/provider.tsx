@@ -1085,7 +1085,20 @@ export function ERPProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    await update(ref(db, `erp/orders/${orderId}`), { status })
+    const updates: Record<string, unknown> = { [`orders/${orderId}/status`]: status }
+
+    // Completing an order clears its balance — payment is considered settled in full.
+    if (status === 'completed' && order.due > 0) {
+      updates[`orders/${orderId}/paid`] = order.total
+      updates[`orders/${orderId}/due`] = 0
+      updates[`orders/${orderId}/paymentStatus`] = 'paid'
+      updates[`customers/${order.customerId}/due`] = Math.max(
+        (data.customers[order.customerId]?.due ?? 0) - order.due,
+        0
+      )
+    }
+
+    await update(ref(db, 'erp'), updates)
     await writeActivity('order_status_changed', 'sales', `Moved order ${orderId} to ${status}.`)
     await writeNotification(
       'Order status updated',
