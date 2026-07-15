@@ -61,6 +61,12 @@ const supportLabels: Record<CustomerRecord['supportStatus'], string> = {
   resolved: 'Resolved',
 }
 
+const leadSourceLabels: Record<NonNullable<CustomerRecord['leadSource']>, string> = {
+  facebook: 'From Facebook',
+  'local-marketing': 'From Local Marketing',
+  'visiting-customer': 'From Visiting Customer',
+}
+
 function supportToneClass(status: CustomerRecord['supportStatus']) {
   if (status === 'needed') {
     return 'border-amber-200 bg-amber-500/10 text-amber-700 dark:border-amber-900 dark:text-amber-300'
@@ -98,7 +104,7 @@ export default function CustomersPage() {
   const orders = useMemo(() => toArray(data?.orders), [data?.orders])
   const [query, setQuery] = useState('')
   const [supportFilter, setSupportFilter] = useState<CustomerRecord['supportStatus'] | 'all'>('all')
-  const [premiumOnly, setPremiumOnly] = useState(false)
+  const [tierFilter, setTierFilter] = useState<'all' | 'premium' | 'normal'>('all')
   const [reminderOnly, setReminderOnly] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<CustomerRecord | null>(null)
@@ -167,12 +173,15 @@ export default function CustomersPage() {
           .toLowerCase()
           .includes(normalizedQuery)
       const matchesSupport = supportFilter === 'all' || customer.supportStatus === supportFilter
-      const matchesPremium = !premiumOnly || isPremium
+      // "Normal" means they've actually bought something (even one item) but stayed under
+      // the premium threshold — a prospect with zero purchases is neither tier yet.
+      const matchesTier =
+        tierFilter === 'all' || (tierFilter === 'premium' ? isPremium : !isPremium && hasOrders)
       const matchesReminder = !reminderOnly || (customer.reminderCustomer && !hasOrders)
 
-      return matchesSearch && matchesSupport && matchesPremium && matchesReminder
+      return matchesSearch && matchesSupport && matchesTier && matchesReminder
     })
-  }, [customerRows, query, supportFilter, premiumOnly, reminderOnly])
+  }, [customerRows, query, supportFilter, tierFilter, reminderOnly])
 
   const metrics = useMemo(() => {
     return {
@@ -343,13 +352,16 @@ export default function CustomersPage() {
                   <SelectItem value="none">No support</SelectItem>
                 </SelectContent>
               </Select>
-              <Button
-                variant={premiumOnly ? 'default' : 'outline'}
-                className="h-10 rounded-xl"
-                onClick={() => setPremiumOnly((current) => !current)}
-              >
-                Premium only
-              </Button>
+              <Select value={tierFilter} onValueChange={(value) => setTierFilter(value as typeof tierFilter)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All customers</SelectItem>
+                  <SelectItem value="premium">Premium only</SelectItem>
+                  <SelectItem value="normal">Normal only</SelectItem>
+                </SelectContent>
+              </Select>
               <Button
                 variant={reminderOnly ? 'default' : 'outline'}
                 className="h-10 rounded-xl"
@@ -423,7 +435,7 @@ export default function CustomersPage() {
                             <p className="text-sm text-muted-foreground">{customer.company || 'Retail'}</p>
                             <div className="mt-1 flex flex-wrap gap-1.5">
                               <Badge variant="outline" className="text-xs font-normal">
-                                {customer.leadSource === 'facebook' ? 'From Facebook' : 'From Local Marketing'}
+                                {leadSourceLabels[customer.leadSource ?? 'local-marketing']}
                               </Badge>
                               {customer.reminderCustomer && !hasOrders ? (
                                 <Badge className="bg-sky-500/15 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300">
@@ -602,6 +614,7 @@ export default function CustomersPage() {
                     <SelectContent>
                       <SelectItem value="facebook">From Facebook</SelectItem>
                       <SelectItem value="local-marketing">From Local Marketing</SelectItem>
+                      <SelectItem value="visiting-customer">From Visiting Customer</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

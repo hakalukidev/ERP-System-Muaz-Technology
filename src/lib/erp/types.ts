@@ -60,7 +60,7 @@ export type CustomerRecord = {
   supportStatus: 'none' | 'needed' | 'in-progress' | 'resolved'
   supportNote: string
   isPremium: boolean
-  leadSource?: 'facebook' | 'local-marketing'
+  leadSource?: 'facebook' | 'local-marketing' | 'visiting-customer'
   reminderCustomer?: boolean
   createdAt: string
   updatedAt: string
