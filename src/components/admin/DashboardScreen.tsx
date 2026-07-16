@@ -69,6 +69,12 @@ const PAYMENT_STATUS_COLORS: Record<string, string> = {
   unpaid: 'hsl(var(--chart-3))',
 }
 
+function getKpiValueFontSize(value: string | number) {
+  const characterCount = String(value).length
+
+  return `${Math.max(8, Math.min(18, 160 / characterCount))}px`
+}
+
 export function DashboardScreen() {
   const { data, loading, error, currentUser, saveInvestor } = useERP()
   const snapshot = buildDashboardSnapshot(data, currentUser?.roleId)
@@ -196,9 +202,14 @@ export function DashboardScreen() {
                   >
                     <Icon className="h-5 w-5" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground">{item.label}</p>
-                    <p className="mt-1 truncate text-lg font-semibold tracking-tight">{item.value}</p>
+                    <p
+                      className="mt-1 max-w-full break-words font-semibold leading-tight tracking-tight"
+                      style={{ fontSize: getKpiValueFontSize(item.value), overflowWrap: 'anywhere' }}
+                    >
+                      {item.value}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
