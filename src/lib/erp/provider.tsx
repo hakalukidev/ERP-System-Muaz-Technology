@@ -302,6 +302,9 @@ function normalizeCustomerInput(input: CustomerInput) {
     isPremium: input.isPremium ?? false,
     leadSource: input.leadSource ?? 'local-marketing',
     reminderCustomer: input.reminderCustomer ?? false,
+    previousBillNumber: input.previousBillNumber?.trim() ?? '',
+    previousPurchaseDetails: input.previousPurchaseDetails?.trim() ?? '',
+    previousPurchaseAmount: Math.max(input.previousPurchaseAmount ?? 0, 0),
   }
 }
 

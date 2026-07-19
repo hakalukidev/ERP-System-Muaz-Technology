@@ -62,6 +62,9 @@ export type CustomerRecord = {
   isPremium: boolean
   leadSource?: 'facebook' | 'local-marketing' | 'visiting-customer'
   reminderCustomer?: boolean
+  previousBillNumber?: string
+  previousPurchaseDetails?: string
+  previousPurchaseAmount?: number
   createdAt: string
   updatedAt: string
 }
@@ -311,6 +314,9 @@ export type CustomerInput = {
   isPremium?: boolean
   leadSource?: CustomerRecord['leadSource']
   reminderCustomer?: boolean
+  previousBillNumber?: string
+  previousPurchaseDetails?: string
+  previousPurchaseAmount?: number
 }
 
 export type SupplierInput = {

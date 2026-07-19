@@ -40,6 +40,9 @@ type CustomerFormState = {
   supportNote: string
   leadSource: NonNullable<CustomerRecord['leadSource']>
   reminderCustomer: boolean
+  previousBillNumber: string
+  previousPurchaseDetails: string
+  previousPurchaseAmount: string
 }
 
 const emptyCustomerForm: CustomerFormState = {
@@ -52,6 +55,9 @@ const emptyCustomerForm: CustomerFormState = {
   supportNote: '',
   leadSource: 'facebook',
   reminderCustomer: false,
+  previousBillNumber: '',
+  previousPurchaseDetails: '',
+  previousPurchaseAmount: '',
 }
 
 const supportLabels: Record<CustomerRecord['supportStatus'], string> = {
@@ -94,6 +100,9 @@ function formFromCustomer(customer: CustomerRecord): CustomerFormState {
     supportNote: customer.supportNote,
     leadSource: customer.leadSource ?? 'local-marketing',
     reminderCustomer: customer.reminderCustomer ?? false,
+    previousBillNumber: customer.previousBillNumber ?? '',
+    previousPurchaseDetails: customer.previousPurchaseDetails ?? '',
+    previousPurchaseAmount: customer.previousPurchaseAmount ? String(customer.previousPurchaseAmount) : '',
   }
 }
 
@@ -120,6 +129,15 @@ export default function CustomersPage() {
         const purchaseTotal = customerOrders.reduce((sum, order) => sum + order.total, 0)
         const lastOrder = [...customerOrders].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
 
+        const searchBlob = [
+          customer.previousBillNumber,
+          customer.previousPurchaseDetails,
+          ...customerOrders.flatMap((order) => [order.billNumber, ...order.items.map((item) => item.productName)]),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+
         return {
           customer,
           orderCount: customerOrders.length,
@@ -128,6 +146,7 @@ export default function CustomersPage() {
           lastPurchaseDate: lastOrder?.createdAt ?? customer.updatedAt,
           hasOrders: customerOrders.length > 0,
           isPremium: customer.isPremium || isPremiumCustomer(purchaseTotal),
+          searchBlob,
         }
       })
       .sort((left, right) => right.purchaseTotal - left.purchaseTotal)
@@ -165,10 +184,10 @@ export default function CustomersPage() {
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
 
-    return customerRows.filter(({ customer, isPremium, hasOrders }) => {
+    return customerRows.filter(({ customer, isPremium, hasOrders, searchBlob }) => {
       const matchesSearch =
         !normalizedQuery ||
-        [customer.name, customer.company, customer.phone, customer.location, customer.supportNote]
+        [customer.name, customer.company, customer.phone, customer.location, customer.supportNote, searchBlob]
           .join(' ')
           .toLowerCase()
           .includes(normalizedQuery)
@@ -221,6 +240,9 @@ export default function CustomersPage() {
       supportNote: customerForm.supportNote,
       leadSource: customerForm.leadSource,
       reminderCustomer: customerForm.reminderCustomer,
+      previousBillNumber: customerForm.previousBillNumber,
+      previousPurchaseDetails: customerForm.previousPurchaseDetails,
+      previousPurchaseAmount: Number(customerForm.previousPurchaseAmount) || 0,
     }
 
     try {
@@ -328,7 +350,7 @@ export default function CustomersPage() {
           <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle>Customer data table</CardTitle>
-              <CardDescription>Search by name, phone, company, location, or support note.</CardDescription>
+              <CardDescription>Search by name, phone, company, location, support note, bill number, or product.</CardDescription>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_190px_auto_auto_auto]">
               <div className="relative">
@@ -337,7 +359,7 @@ export default function CustomersPage() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="pl-9"
-                  placeholder="Search by name or phone"
+                  placeholder="Search by name, phone, bill number, or product"
                 />
               </div>
               <Select value={supportFilter} onValueChange={(value) => setSupportFilter(value as typeof supportFilter)}>
@@ -391,7 +413,9 @@ export default function CustomersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRows.map(({ customer, orderCount, purchaseTotal, dueTotal, lastPurchaseDate, hasOrders, isPremium }) => (
+                  {filteredRows.map(({ customer, orderCount, purchaseTotal, dueTotal, lastPurchaseDate, hasOrders, isPremium }) => {
+                    const hasManualRecord = !hasOrders && Boolean(customer.previousBillNumber || customer.previousPurchaseAmount)
+                    return (
                     <TableRow key={customer.id}>
                       <TableCell className="min-w-56">
                         <div className="flex items-center gap-3">
@@ -460,16 +484,25 @@ export default function CustomersPage() {
                       </TableCell>
                       <TableCell className="min-w-44">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium">{formatCurrency(purchaseTotal, currency)}</p>
+                          <p className="font-medium">
+                            {formatCurrency(hasManualRecord ? customer.previousPurchaseAmount ?? 0 : purchaseTotal, currency)}
+                          </p>
                           {isPremium ? (
                             <Badge className="rounded-full bg-amber-500/15 text-amber-700 hover:bg-amber-500/15 dark:text-amber-300">
                               Premium
                             </Badge>
                           ) : null}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {orderCount} orders, last {formatDate(lastPurchaseDate)}
-                        </p>
+                        {hasManualRecord ? (
+                          <p className="text-xs text-muted-foreground">
+                            {customer.previousBillNumber ? `Bill #${customer.previousBillNumber} · ` : ''}
+                            recorded manually
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            {orderCount} orders, last {formatDate(lastPurchaseDate)}
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>{formatCurrency(customer.due || dueTotal, currency)}</TableCell>
                       <TableCell className="min-w-64">
@@ -536,7 +569,7 @@ export default function CustomersPage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )})}
                   {filteredRows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
@@ -638,6 +671,53 @@ export default function CustomersPage() {
               </div>
             </div>
 
+            <div className="space-y-4 rounded-2xl border border-border/70 p-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Previous purchase record (optional)
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  For old customers you&apos;re backfilling — note their earlier bill number, what they bought, and how
+                  much, so it&apos;s easy to find later.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Bill number</p>
+                  <Input
+                    value={customerForm.previousBillNumber}
+                    onChange={(event) =>
+                      setCustomerForm((current) => ({ ...current, previousBillNumber: event.target.value }))
+                    }
+                    placeholder="e.g. INV-00219"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-foreground">Amount ({currency ?? 'BDT'})</p>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={customerForm.previousPurchaseAmount}
+                    onChange={(event) =>
+                      setCustomerForm((current) => ({ ...current, previousPurchaseAmount: event.target.value }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-foreground">Products purchased</p>
+                <Textarea
+                  value={customerForm.previousPurchaseDetails}
+                  onChange={(event) =>
+                    setCustomerForm((current) => ({ ...current, previousPurchaseDetails: event.target.value }))
+                  }
+                  placeholder="e.g. LG Fridge 1x, Walton TV 1x"
+                  rows={2}
+                />
+              </div>
+            </div>
+
             {editingCustomer ? (
               <div className="space-y-4 rounded-2xl border border-border/70 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -708,6 +788,29 @@ export default function CustomersPage() {
               {detailsCustomer?.phone} · {detailsCustomer?.location || 'N/A'} · Customer since {detailsCustomer ? formatDate(detailsCustomer.createdAt) : ''}
             </DialogDescription>
           </DialogHeader>
+
+          {detailsCustomer && (detailsCustomer.previousBillNumber || detailsCustomer.previousPurchaseDetails || detailsCustomer.previousPurchaseAmount) ? (
+            <div className="space-y-2 rounded-2xl border border-dashed border-border/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Previous purchase (recorded manually)
+                </p>
+                {detailsCustomer.previousBillNumber ? (
+                  <Badge variant="outline" className="font-normal">
+                    Bill #{detailsCustomer.previousBillNumber}
+                  </Badge>
+                ) : null}
+              </div>
+              {detailsCustomer.previousPurchaseDetails ? (
+                <p className="text-sm">{detailsCustomer.previousPurchaseDetails}</p>
+              ) : null}
+              {detailsCustomer.previousPurchaseAmount ? (
+                <p className="text-sm text-muted-foreground">
+                  Amount <strong className="text-foreground">{formatCurrency(detailsCustomer.previousPurchaseAmount, currency)}</strong>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="flex gap-2">
             <Button
