@@ -127,6 +127,10 @@ export default function CustomersPage() {
       .map((customer) => {
         const customerOrders = orders.filter((order) => order.customerId === customer.id)
         const purchaseTotal = customerOrders.reduce((sum, order) => sum + order.total, 0)
+        const hasOrders = customerOrders.length > 0
+        // Backfilled customers have no live orders yet — their manually recorded previous
+        // purchase amount is the only figure we have, so it counts toward the premium tier too.
+        const effectivePurchaseTotal = hasOrders ? purchaseTotal : customer.previousPurchaseAmount ?? 0
         const lastOrder = [...customerOrders].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
 
         const searchBlob = [
@@ -142,14 +146,15 @@ export default function CustomersPage() {
           customer,
           orderCount: customerOrders.length,
           purchaseTotal,
+          effectivePurchaseTotal,
           dueTotal: customerOrders.reduce((sum, order) => sum + order.due, 0),
           lastPurchaseDate: lastOrder?.createdAt ?? customer.updatedAt,
-          hasOrders: customerOrders.length > 0,
-          isPremium: customer.isPremium || isPremiumCustomer(purchaseTotal),
+          hasOrders,
+          isPremium: isPremiumCustomer(effectivePurchaseTotal),
           searchBlob,
         }
       })
-      .sort((left, right) => right.purchaseTotal - left.purchaseTotal)
+      .sort((left, right) => right.effectivePurchaseTotal - left.effectivePurchaseTotal)
   }, [customers, orders])
 
   const detailsOrders = useMemo(() => {
@@ -264,29 +269,6 @@ export default function CustomersPage() {
       setFeedback(`${customer.name} removed from customer list.`)
     } catch (reason) {
       setFeedback(reason instanceof Error ? reason.message : 'Unable to delete customer.')
-    }
-  }
-
-  async function handleTogglePremium(customer: CustomerRecord) {
-    setFeedback(null)
-
-    try {
-      await saveCustomer(
-        {
-          name: customer.name,
-          company: customer.company,
-          phone: customer.phone,
-          location: customer.location,
-          due: customer.due,
-          supportStatus: customer.supportStatus,
-          supportNote: customer.supportNote,
-          isPremium: !customer.isPremium,
-        },
-        customer.id
-      )
-      setFeedback(`${customer.name} marked as ${!customer.isPremium ? 'premium' : 'regular'} customer.`)
-    } catch (reason) {
-      setFeedback(reason instanceof Error ? reason.message : 'Unable to update premium status.')
     }
   }
 
@@ -419,18 +401,14 @@ export default function CustomersPage() {
                     <TableRow key={customer.id}>
                       <TableCell className="min-w-56">
                         <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void handleTogglePremium(customer)}
-                            className="relative shrink-0 rounded-full outline-none ring-offset-2 focus-visible:ring-2 focus-visible:ring-primary"
-                            aria-pressed={isPremium}
-                            aria-label={`Toggle premium status for ${customer.name}`}
-                            title={isPremium ? 'Premium customer — click to unset' : 'Mark as premium customer'}
+                          <div
+                            className="relative shrink-0 rounded-full"
+                            title={isPremium ? 'Premium customer — lifetime spend over 2,00,000' : undefined}
                           >
                             <Avatar
                               className={cn(
                                 'h-10 w-10 ring-2 transition-colors',
-                                isPremium ? 'ring-amber-400' : 'ring-transparent hover:ring-border'
+                                isPremium ? 'ring-amber-400' : 'ring-transparent'
                               )}
                             >
                               <AvatarFallback
@@ -453,7 +431,7 @@ export default function CustomersPage() {
                                 <Crown className="h-2.5 w-2.5" />
                               </span>
                             ) : null}
-                          </button>
+                          </div>
                           <div>
                             <p className="font-semibold">{customer.name}</p>
                             <p className="text-sm text-muted-foreground">{customer.company || 'Retail'}</p>

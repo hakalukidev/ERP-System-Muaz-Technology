@@ -1,5 +1,5 @@
 import type { ERPData } from '@/lib/erp/types'
-import { formatCurrency, formatDate, toArray } from '@/lib/erp/utils'
+import { formatCurrency, formatDate, isPremiumCustomer, toArray } from '@/lib/erp/utils'
 
 export type ReportFieldType = 'string' | 'number' | 'currency' | 'date' | 'boolean'
 
@@ -118,17 +118,26 @@ export const REPORT_SOURCES: ReportSource[] = [
     id: 'customers',
     label: 'Customers',
     description: 'Customer ledger with dues, support status, and premium flag.',
-    rows: (data) =>
-      toArray(data.customers).map((customer) => ({
-        name: customer.name,
-        company: customer.company,
-        phone: customer.phone,
-        location: customer.location,
-        due: customer.due,
-        supportStatus: customer.supportStatus,
-        isPremium: customer.isPremium,
-        createdAt: customer.createdAt,
-      })),
+    rows: (data) => {
+      const orders = toArray(data.orders)
+      return toArray(data.customers).map((customer) => {
+        const customerOrders = orders.filter((order) => order.customerId === customer.id)
+        const purchaseTotal = customerOrders.reduce((sum, order) => sum + order.total, 0)
+        const effectivePurchaseTotal =
+          customerOrders.length > 0 ? purchaseTotal : customer.previousPurchaseAmount ?? 0
+
+        return {
+          name: customer.name,
+          company: customer.company,
+          phone: customer.phone,
+          location: customer.location,
+          due: customer.due,
+          supportStatus: customer.supportStatus,
+          isPremium: isPremiumCustomer(effectivePurchaseTotal),
+          createdAt: customer.createdAt,
+        }
+      })
+    },
     columns: [
       col('name', 'Customer', 'string', { searchable: true }),
       col('company', 'Company', 'string', { searchable: true }),

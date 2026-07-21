@@ -8,6 +8,7 @@ import {
   Boxes,
   CheckCheck,
   FileSpreadsheet,
+  FileText,
   Handshake,
   LayoutDashboard,
   Lock,
@@ -95,6 +96,13 @@ const navigationGroups: NavigationGroup[] = [
         href: '/admin/customers',
         icon: Users,
         permission: 'view_reports',
+      },
+      {
+        label: 'Price Quotation',
+        description: 'Build a product price quotation and export it as PDF',
+        href: '/admin/quotation',
+        icon: FileText,
+        permission: 'view_products',
       },
       {
         label: 'Seller List',
